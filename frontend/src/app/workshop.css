@@ -1,0 +1,798 @@
+/* Midnight workshop: original artwork, copper actions, and teal details. */
+.workshop-shell {
+  --paper: #0d1b29;
+  --ink: #f3f5f1;
+  --muted: #b7c7cf;
+  --line: #344a59;
+  --accent: #edab75;
+  --light: #152b39;
+  --teal: #8be0d3;
+  min-height: 100vh;
+  padding: 98px 0 50px;
+  isolation: isolate;
+  position: relative;
+  color-scheme: dark;
+  color: var(--ink);
+}
+.workshop-wallpaper {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: #102737;
+}
+.workshop-wallpaper > img {
+  object-fit: cover;
+  object-position: center;
+}
+.wallpaper-wash {
+  position: absolute;
+  inset: 0;
+  background: #07152225;
+}
+.workshop-shell .wrap {
+  padding-left: 42px;
+  padding-right: 42px;
+  max-width: none;
+}
+.workshop-shell #main {
+  scroll-margin-top: 110px;
+}
+.workshop-shell .header.wrap {
+  position: fixed;
+  z-index: 20;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 220px);
+  max-width: 1170px;
+  height: 64px;
+  padding: 0 24px;
+  border: 1px solid #445766;
+  background: #0e1c2beb;
+  border-radius: 14px;
+  box-shadow: 0 6px 20px #020c1640;
+}
+.workshop-shell .header .wordmark {
+  font-size: 27px;
+  letter-spacing: -1.3px;
+}
+.workshop-shell .header nav {
+  gap: 24px;
+}
+.workshop-shell .header nav > a {
+  font-size: 13px;
+}
+.workshop-shell .header .button.small {
+  padding: 9px 14px;
+  gap: 19px;
+  font-size: 12px;
+}
+.workshop-shell .button {
+  color: #1c2630;
+  background: #edab75;
+  border-color: #f5c097;
+  border-radius: 9px;
+  box-shadow: 0 3px 0 #965c37;
+  padding: 13px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+}
+.workshop-shell .button:hover {
+  background: #f7bd8d;
+  border-color: #f9d0ae;
+  box-shadow: 0 3px 0 #ad754c;
+}
+.workshop-shell .button:active {
+  box-shadow: 0 1px 0 #965c37;
+}
+.workshop-shell .button > span {
+  font-size: 20px;
+}
+.site-workbench {
+  width: calc(100% - 220px);
+  max-width: 1170px;
+  margin: 0 auto;
+  background: #0c1b2bed;
+  border: 1px solid #3c5362;
+  border-radius: 19px;
+  box-shadow: 0 20px 65px #02091080;
+  overflow: clip;
+  position: relative;
+  z-index: 2;
+}
+.workshop-shell .hero {
+  grid-template-columns: 1.1fr 1fr;
+  gap: 40px;
+  padding-top: 68px;
+  padding-bottom: 65px;
+}
+.workshop-shell .eyebrow {
+  font-size: 10px;
+  letter-spacing: 1px;
+  margin-bottom: 23px;
+  color: #b5c8d1;
+}
+.workshop-shell .hero h1 {
+  font-size: clamp(45px, 4.2vw, 66px);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -2.8px;
+  margin-bottom: 26px;
+}
+.workshop-shell .hero h1 > span,
+.workshop-shell .review-intro h2 > span {
+  color: var(--teal);
+}
+.workshop-shell .hero-description {
+  font-size: 16px;
+  line-height: 1.7;
+  margin-bottom: 28px;
+}
+.workshop-shell .hero-note {
+  font-size: 12px;
+  margin-top: 18px;
+  max-width: 330px;
+}
+.workshop-shell .live-dot {
+  background: var(--accent);
+}
+.workshop-shell .hero-visual {
+  padding: 0;
+  border: 1px solid #4b6876;
+  border-radius: 15px;
+  background: #182f3ee8;
+  transform: none;
+  box-shadow: 7px 9px 0 #020d1740;
+  position: relative;
+  min-width: 0;
+}
+.workshop-shell .visual-top {
+  padding: 15px 20px;
+  margin: 0;
+  border-bottom: 1px solid #3c5768;
+  color: #8ee0d3;
+  font-size: 10px;
+  letter-spacing: 1px;
+  background: transparent;
+}
+.workshop-shell .visual-top .plan-label {
+  font-size: 8px;
+  letter-spacing: 0.6px;
+  color: #c0ced6;
+}
+.workshop-shell .work-card {
+  background: transparent;
+  color: var(--ink);
+  border: 0;
+  padding: 27px 24px 82px;
+  box-shadow: none;
+  border-radius: 0;
+  transform: none;
+  position: relative;
+}
+.workshop-shell .work-card > .mono {
+  color: #a6bac6;
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+.workshop-shell .work-card h2 {
+  font-size: 31px;
+  font-weight: 600;
+  letter-spacing: -1px;
+  margin: 16px 0 25px;
+  line-height: 1.12;
+}
+.illustrated-checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #c3d4dc;
+  position: relative;
+  z-index: 1;
+  max-width: 260px;
+}
+.illustrated-checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 10px 0;
+}
+.illustrated-checklist li > span {
+  color: var(--teal);
+  font-weight: 700;
+}
+.hero-bot {
+  position: absolute;
+  right: 17px;
+  bottom: -20px;
+  width: 117px;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 4px #07141e80);
+  z-index: 2;
+}
+.workshop-shell .review-ticket {
+  box-shadow: none;
+  border: 1px solid #4b726f;
+  background: #1b4248;
+  transform: none;
+  padding: 14px;
+  gap: 11px;
+  margin: 0 18px 16px;
+  position: relative;
+  z-index: 3;
+  max-width: calc(100% - 55px);
+  border-radius: 9px;
+}
+.workshop-shell .ticket-icon {
+  width: 28px;
+  height: 28px;
+  line-height: 28px;
+  font-size: 18px;
+  background: #2a5e5b;
+  color: #b3f4df;
+}
+.workshop-shell .review-ticket p {
+  font-size: 13px;
+  line-height: 1.2;
+  margin-bottom: 6px;
+}
+.workshop-shell .review-ticket div > span {
+  font-size: 10px;
+  color: #c0d9d6;
+}
+.workshop-shell .ticket-arrow {
+  font-size: 20px;
+  color: #ace5dc;
+}
+.workshop-shell .visual-foot {
+  font: 10px/1.6 var(--mono);
+  padding: 0 20px 18px;
+  margin: 0;
+  letter-spacing: 0;
+  text-align: left;
+  color: #b4c7d2;
+}
+.workshop-shell .platform-strip {
+  background: #1a30424d;
+  border-color: var(--line);
+}
+.workshop-shell .platform-strip .wrap {
+  padding-top: 23px;
+  padding-bottom: 23px;
+  gap: 25px;
+}
+.workshop-shell .platform-strip .wrap > span {
+  font-size: 9px;
+  max-width: 180px;
+}
+.workshop-shell .platform-strip .wrap > div {
+  gap: 23px;
+}
+.workshop-shell .platform-strip b {
+  font-size: 16px;
+}
+.workshop-shell .platform-strip div > span {
+  font-size: 11px;
+}
+.workshop-shell .section {
+  padding-top: 70px;
+  padding-bottom: 70px;
+}
+.workshop-shell .section h2 {
+  font-size: 39px;
+  font-weight: 600;
+  letter-spacing: -1.5px;
+}
+.workshop-shell .section-heading {
+  gap: 0 40px;
+}
+.workshop-shell .section-heading > p:last-child {
+  font-size: 15px;
+  line-height: 1.75;
+  margin-bottom: 30px;
+}
+.workshop-shell .fix-grid {
+  border-top: 0;
+  gap: 15px;
+  margin-top: 17px;
+}
+.workshop-shell .fix-grid article,
+.workshop-shell .fix-grid article + article {
+  border: 1px solid var(--line);
+  background: #172b3b;
+  border-radius: 12px;
+  padding: 26px 21px;
+  box-shadow: none;
+}
+.workshop-shell .number {
+  font-size: 11px;
+  color: var(--accent);
+}
+.workshop-shell .fix-grid h3 {
+  font-size: 21px;
+  letter-spacing: -0.6px;
+  margin: 19px 0 13px;
+}
+.workshop-shell .fix-grid p {
+  font-size: 14px;
+  line-height: 1.75;
+}
+.workshop-shell .process-section {
+  background: #122c3b80;
+}
+.workshop-shell .process-section .section {
+  gap: 42px;
+}
+.workshop-shell .process-intro > p:last-child {
+  font-size: 15px;
+}
+.workshop-shell .process-list {
+  border: 1px solid #3b5b69;
+  border-radius: 12px;
+  background: #142e3b;
+  padding: 25px;
+  box-shadow: none;
+}
+.workshop-shell .process-list li {
+  gap: 16px;
+  padding-bottom: 25px;
+}
+.workshop-shell .process-list li + li {
+  padding-top: 25px;
+  border-color: var(--line);
+}
+.workshop-shell .process-list li:last-child {
+  padding-bottom: 0;
+}
+.workshop-shell .process-list h3 {
+  font-size: 19px;
+  letter-spacing: -0.4px;
+}
+.workshop-shell .process-list p {
+  font-size: 14px;
+}
+.workshop-shell .process-list li > span {
+  font-size: 11px;
+  color: var(--accent);
+}
+.workshop-shell .review-section {
+  grid-template-columns: 0.78fr 1.22fr;
+  gap: 36px;
+}
+.workshop-shell .review-intro {
+  top: 110px;
+}
+.workshop-shell .review-intro h2 {
+  font-size: 39px;
+  letter-spacing: -1.5px;
+}
+.workshop-shell .review-intro > p {
+  font-size: 15px;
+}
+.workshop-shell .review-intro > .quiet {
+  font-size: 13px;
+}
+.workshop-shell .review-expect {
+  margin-top: 28px;
+  padding-top: 23px;
+}
+.workshop-shell .review-expect h3 {
+  font-size: 17px;
+}
+.workshop-shell .review-expect p {
+  font-size: 14px;
+}
+.workshop-shell .intake-card {
+  padding: 26px;
+  border-color: #456373;
+  background: #152c3b;
+  border-radius: 13px;
+  box-shadow: none;
+}
+.workshop-shell .form-step h3 {
+  font-size: 21px;
+  font-weight: 600;
+}
+.workshop-shell .form-step p {
+  font-size: 13px;
+}
+.workshop-shell .form-step > span {
+  color: var(--accent);
+}
+.workshop-shell .github-panel {
+  background: #102331;
+  border-color: #425e6e;
+  border-radius: 8px;
+  padding: 18px;
+}
+.workshop-shell .github-button,
+.workshop-shell .outline {
+  background: #244a53;
+  border-color: #649a9c;
+  box-shadow: 0 2px 0 #102a32;
+  color: #e4f8f2;
+}
+.workshop-shell .github-button:hover,
+.workshop-shell .outline:hover {
+  background: #2f5d66;
+  border-color: #8dbfbc;
+}
+.workshop-shell label,
+.workshop-shell .workflow-options legend {
+  font-size: 13px;
+}
+.workshop-shell input:not([type="checkbox"]),
+.workshop-shell textarea,
+.workshop-shell select {
+  background: #0c2030;
+  border-color: #587384;
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: 14px;
+}
+.workshop-shell input::placeholder,
+.workshop-shell textarea::placeholder {
+  color: #a8bdca;
+  font-size: 13px;
+}
+.workshop-shell .workflow-options label {
+  background: #102534;
+  border-color: #506a79;
+  font-size: 12px;
+  padding: 10px;
+}
+.workshop-shell .workflow-options label:has(input:checked) {
+  background: #224d51;
+  border-color: #7cbcb4;
+}
+.workshop-shell .workflow-options input,
+.workshop-shell .consent input {
+  accent-color: var(--teal);
+}
+.workshop-shell .github-panel form > .quiet,
+.workshop-shell .brief-form .quiet {
+  font-size: 12px;
+}
+.workshop-shell .error {
+  color: #ffd3b9;
+  background: #422c29;
+  border-color: #a46b57;
+}
+.workshop-shell .inspection {
+  background: #102737;
+  border-color: #466371;
+  border-radius: 8px;
+}
+.workshop-shell .report-badge {
+  color: #b2e8da;
+  background: #284b50;
+  font-size: 10px;
+}
+.workshop-shell .effort,
+.workshop-shell .evidence details,
+.workshop-shell .limitations,
+.workshop-shell .next-checks {
+  border-color: #425e70;
+}
+.workshop-shell .stack-tags > span {
+  border-color: #4e6c7c;
+}
+.workshop-shell .effort > p,
+.workshop-shell .inspection > .quiet,
+.workshop-shell .limitations,
+.workshop-shell .evidence-path {
+  font-size: 12px;
+}
+.workshop-shell .evidence summary,
+.workshop-shell .evidence details > p,
+.workshop-shell .next-checks ol {
+  font-size: 12px;
+}
+.workshop-shell .evidence summary > .quiet {
+  font-size: 10px;
+}
+.workshop-shell .evidence-found,
+.workshop-shell .evidence-path,
+.workshop-shell .attached {
+  color: var(--teal);
+}
+.workshop-shell .evidence-check {
+  color: #ffc098;
+}
+.workshop-shell .attached {
+  font-size: 12px;
+}
+.workshop-shell .sample-notice {
+  font-size: 12px;
+  line-height: 1.65;
+  padding: 12px;
+  border: 1px solid #887048;
+  border-radius: 6px;
+  background: #3b352b;
+  color: #ffe1b1;
+  margin-top: 15px;
+}
+.workshop-shell .workflow-options:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 5px;
+  border-radius: 6px;
+}
+.workshop-shell .workflow-error {
+  margin-bottom: 12px;
+}
+.workshop-shell .success-check {
+  border-radius: 13px;
+  background: #234f51;
+  border: 1px solid #659a90;
+  color: #a2efcf;
+}
+.workshop-shell .success-card h3 {
+  font-size: 32px;
+}
+.workshop-shell .faq {
+  grid-template-columns: 0.78fr 1.22fr;
+  gap: 36px;
+  padding-top: 10px;
+  padding-bottom: 60px;
+}
+.workshop-shell .faq summary {
+  font-size: 15px;
+  padding: 20px 0;
+}
+.workshop-shell .faq details > p {
+  font-size: 14px;
+}
+.workshop-shell .footer {
+  background: #13273780;
+  padding-top: 25px;
+  padding-bottom: 25px;
+}
+.workshop-shell .footer p {
+  font-size: 12px;
+}
+.workshop-shell .footer .wordmark {
+  font-size: 23px;
+}
+.workshop-shell .footer > a:last-child {
+  font-size: 12px;
+}
+.workshop-shell .skip-link {
+  background: #edab75;
+  color: #142535;
+  z-index: 30;
+}
+.privacy-shell {
+  padding-top: 40px;
+}
+.workshop-shell .privacy {
+  max-width: 800px;
+  width: calc(100% - 40px);
+  padding: 40px;
+  background: #0c1b2bf5;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+@media (max-width: 480px) {
+  .workshop-shell .privacy {
+    padding: 26px;
+  }
+}
+@media (max-width: 1150px) {
+  .site-workbench,
+  .workshop-shell .header.wrap {
+    width: calc(100% - 100px);
+  }
+  .workshop-shell .wrap {
+    padding-left: 30px;
+    padding-right: 30px;
+  }
+  .workshop-shell .hero {
+    gap: 25px;
+  }
+  .workshop-shell .hero h1 {
+    font-size: 50px;
+    letter-spacing: -2px;
+  }
+  .workshop-shell .work-card {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .workshop-shell .work-card h2 {
+    font-size: 29px;
+  }
+  .workshop-shell .platform-strip .wrap > div {
+    gap: 18px;
+  }
+  .workshop-shell .platform-strip .wrap > div > span {
+    display: none;
+  }
+  .workshop-shell .review-section {
+    grid-template-columns: 0.7fr 1.3fr;
+    gap: 25px;
+  }
+  .workshop-shell .intake-card {
+    padding: 22px;
+  }
+  .workshop-shell .section h2 {
+    font-size: 35px;
+  }
+}
+@media (max-width: 850px) {
+  .workshop-shell {
+    padding-top: 90px;
+    padding-bottom: 30px;
+  }
+  .site-workbench,
+  .workshop-shell .header.wrap {
+    width: calc(100% - 36px);
+  }
+  .workshop-shell .hero {
+    padding-top: 50px;
+    padding-bottom: 48px;
+  }
+  .workshop-shell .hero h1 {
+    font-size: 45px;
+  }
+  .workshop-shell .hero-visual {
+    max-width: 390px;
+  }
+  .workshop-shell .section {
+    padding-top: 52px;
+    padding-bottom: 52px;
+  }
+}
+@media (max-width: 760px) {
+  .workshop-shell input:not([type="checkbox"]),
+  .workshop-shell textarea,
+  .workshop-shell select {
+    font-size: 16px;
+  }
+  .workshop-shell .hero {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
+  .workshop-shell .hero h1 {
+    font-size: 55px;
+    letter-spacing: -2.2px;
+  }
+  .workshop-shell .hero-copy {
+    max-width: 480px;
+  }
+  .workshop-shell .hero-visual {
+    width: 100%;
+    margin: 0 auto;
+  }
+  .workshop-shell .work-card {
+    padding: 28px 24px 80px;
+  }
+  .workshop-shell .work-card h2 {
+    font-size: 33px;
+  }
+  .workshop-shell .platform-strip .wrap {
+    gap: 15px;
+    align-items: flex-start;
+  }
+  .workshop-shell .platform-strip .wrap > span {
+    max-width: none;
+  }
+  .workshop-shell .platform-strip .wrap > div {
+    gap: 23px;
+  }
+  .workshop-shell .fix-grid {
+    gap: 17px;
+  }
+  .workshop-shell .fix-grid article,
+  .workshop-shell .fix-grid article + article {
+    padding: 25px;
+  }
+  .workshop-shell .process-section .section,
+  .workshop-shell .review-section,
+  .workshop-shell .faq {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .workshop-shell .review-intro {
+    position: static;
+  }
+  .workshop-shell .review-intro h2 {
+    font-size: 38px;
+  }
+  .workshop-shell .review-intro > p,
+  .workshop-shell .review-expect {
+    max-width: 460px;
+  }
+  .workshop-shell .faq {
+    padding-top: 0;
+  }
+  .workshop-shell .header nav > a:not(.button) {
+    display: none;
+  }
+  .workshop-shell .header .button.small {
+    font-size: 12px;
+    padding: 9px 11px;
+    gap: 13px;
+  }
+  .workshop-shell .header.wrap {
+    height: 59px;
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .workshop-shell .footer {
+    gap: 16px;
+  }
+  .workshop-shell .workshop-wallpaper > img {
+    object-position: 44% center;
+  }
+}
+@media (max-width: 480px) {
+  .site-workbench,
+  .workshop-shell .header.wrap {
+    width: calc(100% - 20px);
+    border-radius: 13px;
+  }
+  .workshop-shell .wrap {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+  .workshop-shell .hero h1 {
+    font-size: 44px;
+  }
+  .workshop-shell .hero {
+    padding-top: 39px;
+  }
+  .workshop-shell .hero-description {
+    font-size: 15px;
+  }
+  .workshop-shell .section h2 {
+    font-size: 33px;
+  }
+  .workshop-shell .platform-strip .wrap > div {
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .workshop-shell .platform-strip b {
+    font-size: 15px;
+  }
+  .workshop-shell .intake-card {
+    padding: 18px;
+  }
+  .workshop-shell .github-panel {
+    padding: 14px;
+  }
+  .workshop-shell .visual-top {
+    padding-left: 17px;
+    padding-right: 17px;
+  }
+  .workshop-shell .visual-top .plan-label {
+    font-size: 7px;
+  }
+  .workshop-shell .review-ticket {
+    max-width: calc(100% - 48px);
+    padding: 12px;
+  }
+  .workshop-shell .review-ticket p {
+    font-size: 12px;
+  }
+  .workshop-shell .review-ticket div > span {
+    font-size: 9px;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .site-workbench,
+  .workshop-shell .header.wrap {
+    backdrop-filter: none;
+    background: #0d1b29;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workshop-shell * {
+    transition: none !important;
+  }
+}

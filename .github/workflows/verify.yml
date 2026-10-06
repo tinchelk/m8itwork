@@ -1,0 +1,31 @@
+name: Verify
+on: [push, pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: m8itwork_test
+          POSTGRES_USER: m8itwork
+          POSTGRES_PASSWORD: test_only
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U m8itwork -d m8itwork_test" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://m8itwork:test_only@localhost:5432/m8itwork_test?schema=public
+      TEST_DATABASE_URL: postgresql://m8itwork:test_only@localhost:5432/m8itwork_test?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            backend/package-lock.json
+      - run: make install
+      - run: npm --prefix backend run db:migrate
+      - run: make verify
+      - run: npx --prefix frontend playwright install --with-deps chromium
+      - run: npm --prefix frontend run test:e2e

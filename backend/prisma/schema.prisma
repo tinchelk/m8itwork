@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ReviewSession {
+  id                   String       @id
+  expiresAt            DateTime
+  oauthStateHash       String?      @unique
+  oauthAttemptId       String?
+  selectedInspectionId String?      @db.Uuid
+  oauthExpiresAt       DateTime?
+  verifierEncrypted    String?
+  tokenEncrypted       String?
+  tokenExpiresAt       DateTime?
+  githubLogin          String?
+  inspections          Inspection[]
+  createdAt            DateTime     @default(now())
+
+  @@index([expiresAt])
+}
+
+model Inspection {
+  id        String        @id @default(uuid()) @db.Uuid
+  sessionId String
+  session   ReviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  report    Json
+  createdAt DateTime      @default(now())
+
+  @@index([sessionId, createdAt])
+}
+
+model Submission {
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String
+  email            String
+  projectName      String
+  platform         String
+  demoUrl          String?
+  problem          String
+  workflows        String[]
+  inspectionReport Json?
+  status           String   @default("NEW")
+  createdAt        DateTime @default(now())
+
+  @@index([createdAt])
+}

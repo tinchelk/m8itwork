@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: m8itwork
+      POSTGRES_USER: m8itwork
+      POSTGRES_PASSWORD: m8itwork_local
+    ports:
+      - "127.0.0.1:55434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U m8itwork -d m8itwork"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+  backend:
+    profiles: ["app"]
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://m8itwork:m8itwork_local@postgres:5432/m8itwork?schema=public
+      NODE_ENV: development
+      PORT: 3121
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3120}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:3121}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+    ports:
+      - "127.0.0.1:3121:3121"
+    depends_on:
+      postgres:
+        condition: service_healthy
+  frontend:
+    profiles: ["app"]
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3121}
+    ports:
+      - "127.0.0.1:3120:3120"
+    depends_on:
+      - backend
+volumes:
+  postgres_data:
