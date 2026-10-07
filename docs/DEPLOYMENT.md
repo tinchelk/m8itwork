@@ -1,5 +1,21 @@
 # Railway and Cloudflare deployment — October 6, 2026
 
+## Customer GitHub connection recovery — October 7, 2026
+
+Reviewed milestone `3f1e5dd0cf919989c4f0e9a5abbab399df3cef08` separates customer repository authorization from sign-in identity linking. All 132 real-PostgreSQL tests and 134 desktop/mobile browser checks pass, with backend/frontend lint, typechecks, production builds, and all three independent review gates. Staff independently repeated the final 17 connection tests. See [GITHUB_CONNECTION_RECOVERY.md](GITHUB_CONNECTION_RECOVERY.md) for scope, acceptance, review findings and compatible rollback order. No migration or provider/worker configuration changes were required. Exact Git archives excluded ignored credentials and runtime files.
+
+All three Railway deployments succeeded, with the API deployed before frontend links:
+
+| Service | Deployment |
+| --- | --- |
+| API | `c3e347a5-326c-4491-a096-c1d236498e30` |
+| Customer | `b7958f85-78ad-4016-9631-621bffa488ac` |
+| Backoffice | `c20a70f2-b0b0-4cf6-b8d2-3c0ee070bba8` |
+
+Live health/dashboard/backoffice return 200; signed-out project/operator APIs return 401. An unauthenticated repository-connect browser request redirects to `https://m8itwork.com/dashboard?github=signin-required` without starting GitHub authorization. The actual previously blocked Chrome customer session now shows the corrected repository-only Connect link and useful completed-refresh guidance, with no empty disconnected picker. Fresh authorization returned to the same customer dashboard as Tin Che, connected as `@tinchelk`, and listed only the already selected private `tinchelk/growth-ai` repository. That option was successfully selected. No installation permissions or repository selection were expanded, no customer request/project was submitted, and no code was executed. The live screenshot is stored only in ignored `backend/var/preview-github-recovery-production.jpg`.
+
+GitHub temporarily returned server errors for pushes, a Git object API request, and its own authorization page. Its public status API listed no unresolved incident at the time. A later ordinary push and authorization refresh succeeded; the reviewed commit was published unchanged. The unsuccessful alternate object-publication attempt did not update the branch. [GitHub CI run 37642602120](https://github.com/tinchelk/m8itwork/actions/runs/37642602120) completed successfully: both verification (including the browser suite) and the Linux worker-container job passed. Other previously recorded paid-pilot/provider acceptance gates remain unchanged.
+
 User outcome: serve m8itwork over HTTPS on m8itwork.com, with api.m8itwork.com for its authenticated API, so GitHub App callbacks can use public URLs. The user explicitly requested a new Railway project in the workspace used by chat-florist. That existing project provides configuration references; its services and data stay separate.
 
 ## Scope and acceptance
