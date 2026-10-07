@@ -4,6 +4,12 @@ import { hash } from "../crypto.js";
 export const REVIEW_POLICY = "ai-review-v1";
 export const providers = z.enum(["codex", "claude"]);
 export type ReviewProvider = z.infer<typeof providers>;
+export const providerStatusSchema = z.object({ provider: providers, state: z.enum(["READY", "BUSY", "NEEDS_LOGIN", "LIMITED", "ERROR"]), retryAt: z.iso.datetime().optional() }).strict();
+export type ProviderStatus = z.infer<typeof providerStatusSchema>;
+export const activityInputSchema = z.object({ id: z.uuid(), kind: z.enum(["SOURCE", "MODEL", "MESSAGE", "RESULT"]), text: z.string().trim().min(1).max(1600) }).strict();
+export const activitySchema = activityInputSchema.extend({ at: z.iso.datetime(), attemptId: z.uuid() });
+export const discussionSchema = z.object({ instructions: z.string().max(3000), previous: z.array(z.object({ instructions: z.string().max(3000), summary: z.string().max(2000), scope: z.string().max(2000), assumptions: z.string().max(1000) }).strict()).max(3) }).strict();
+export type ReviewDiscussion = z.infer<typeof discussionSchema>;
 const text = (max: number) => z.string().trim().min(1).max(max);
 export const reportSchema = z.object({
   summary: text(3000),

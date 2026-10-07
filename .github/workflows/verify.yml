@@ -1,6 +1,16 @@
 name: Verify
 on: [push, pull_request]
 jobs:
+  worker-container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: docker compose -f compose.worker.yml config --quiet
+      - run: docker compose -f compose.worker.yml build
+      - run: node --test worker/tests/container.test.mjs
   verify:
     runs-on: ubuntu-latest
     services:

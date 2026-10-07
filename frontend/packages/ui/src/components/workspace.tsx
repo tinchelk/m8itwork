@@ -241,7 +241,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
     };
   }, [failure, admin]);
 
-  const save: Save = async (path, data, message) => {
+  const save: Save = async (path, data, message, onFailure) => {
     setBusy(true);
     setError(null);
     setSavedRequestId(null);
@@ -263,6 +263,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
       }
       return true;
     } catch (reason) {
+      onFailure?.(reason);
       if (reason instanceof WorkspaceError && reason.code === "REQUEST_ALREADY_SAVED" && path === "/v1/projects" && typeof data === "object" && data !== null && "id" in data && typeof data.id === "string")
         setSavedRequestId(data.id);
       failure(reason);

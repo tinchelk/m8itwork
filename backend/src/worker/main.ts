@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
-import { requestSnapshotSchema, providers, type SourceSnapshot, type ReviewProvider } from "../reviews/types.js";
+import { discussionSchema, providerStatusSchema, requestSnapshotSchema, providers, type SourceSnapshot, type ReviewProvider, type ProviderStatus } from "../reviews/types.js";
 import { ProviderFailure, runReview, subscriptionReady } from "./provider.js";
 const configSchema = z.object({
   apiUrl: z.url().refine(s => { const u = new URL(s); return !u.username && !u.password && !u.search && !u.hash && u.pathname === "/" && (u.protocol === "https:" || (u.protocol === "http:" && ["localhost", "127.0.0.1"].includes(u.hostname))); }),
@@ -46,6 +46,7 @@ export async function main(args = process.argv.slice(2), configFile = defaultCon
   let stopping = false, current: AbortController | null = null;
   const stop = () => { stopping = true; shutdown.abort(); current?.abort(); };
   process.on("SIGINT", stop); process.on("SIGTERM", stop);
+  const wait = (ms: number) => delay(ms, undefined, { signal: shutdown.signal }).catch(() => {});
   async function api(path: string, body: unknown): Promise<unknown> {
     const response = await fetch(`${config.apiUrl.replace(/\/$/, "")}/v1/review-worker${path}`, { method: "POST", redirect: "error", headers: { authorization: `Bearer ${config.token}`, "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.any([shutdown.signal, AbortSignal.timeout(path.endsWith("context") ? 180_000 : 15_000), ...(current ? [current.signal] : [])]) });
     if (!response.ok) {
@@ -56,54 +57,109 @@ export async function main(args = process.argv.slice(2), configFile = defaultCon
     return JSON.parse(text) as unknown;
   }
   const paused = new Map<ReviewProvider, number>();
+  const readiness = new Map<ReviewProvider, ProviderStatus>();
+  const cooldownFile = join(dirname(configFile), "provider-cooldown.json");
+  try {
+    const stored = z.array(providerStatusSchema).parse(JSON.parse(await readFile(cooldownFile, "utf8")) as unknown);
+    for (const entry of stored) if (entry.state === "LIMITED" && entry.retryAt && config.providers.includes(entry.provider)) {
+      const until = Math.min(new Date(entry.retryAt).getTime(), Date.now() + 30 * 60_000);
+      if (until > Date.now()) { paused.set(entry.provider, until); readiness.set(entry.provider, { ...entry, retryAt: new Date(until).toISOString() }); }
+    }
+  } catch { /* no quota cooldown saved */ }
+  let checkedAt = 0;
+  async function status() {
+    try { await api("/status", { providers: config.providers.map(provider => readiness.get(provider) ?? { provider, state: "ERROR" }) }); }
+    catch (error) { if (error instanceof WorkerApiError && error.status === 401) stop(); /* transient failure is reflected by last-seen expiry */ }
+  }
+  async function probe() {
+    if (Date.now() - checkedAt < 5 * 60_000) return;
+    checkedAt = Date.now();
+    for (const provider of config.providers) {
+      if ((paused.get(provider) ?? 0) > Date.now()) continue;
+      try {
+        await subscriptionReady(provider, binary(provider), AbortSignal.any([shutdown.signal, AbortSignal.timeout(15_000)]));
+        readiness.set(provider, { provider, state: "READY" });
+      } catch (error) { readiness.set(provider, { provider, state: error instanceof ProviderFailure && error.code === "AUTH" ? "NEEDS_LOGIN" : "ERROR" }); }
+    }
+  }
   let attemptId = randomUUID();
   console.log("Review worker running. One review at a time; subscription only. Ctrl+C to stop.");
   try {
     while (!stopping) {
-      const available = config.providers.filter(p => (paused.get(p) ?? 0) <= Date.now());
-      if (!available.length) { await delay(20_000); continue; }
+      await probe(); if (stopping) break;
+      await status(); if (stopping) break;
+      const available = config.providers.filter(p => (paused.get(p) ?? 0) <= Date.now() && readiness.get(p)?.state === "READY");
+      if (!available.length) { if (mode === "once") break; await wait(20_000); continue; }
       try {
         const { job } = z.object({ job: z.object({ id: z.uuid(), attemptId: z.uuid(), provider: providers }).nullable() }).parse(await api("/claim", { attemptId, providers: available }));
         if (stopping) break;
         attemptId = randomUUID();
-        if (!job) { if (mode === "once") break; await delay(20_000); continue; }
+        if (!job) { if (mode === "once") break; await wait(20_000); continue; }
         current = new AbortController();
         const controller = current;
         const body = { attemptId: job.attemptId }, base = `/jobs/${job.id}`;
+        readiness.set(job.provider, { provider: job.provider, state: "BUSY" });
+        await status();
+        let eventQueue = Promise.resolve();
+        const event = (kind: "SOURCE" | "MODEL" | "MESSAGE" | "RESULT", text: string) => {
+          const payload = { ...body, event: { id: randomUUID(), kind, text } };
+          eventQueue = eventQueue.then(async () => {
+            if (controller.signal.aborted) return;
+            try { await api(`${base}/events`, payload); }
+            catch (error) { if (error instanceof WorkerApiError && [401, 409].includes(error.status)) controller.abort(); }
+          });
+          return eventQueue;
+        };
         let heartbeatBusy = false, heartbeatFailures = 0;
         const heartbeat = setInterval(() => {
           if (heartbeatBusy) return;
           heartbeatBusy = true;
-          void api(`${base}/heartbeat`, body).then(() => { heartbeatFailures = 0; }).catch((error: unknown) => {
+          void api(`${base}/heartbeat`, body).then(async () => { heartbeatFailures = 0; await status(); }).catch((error: unknown) => {
             heartbeatFailures++;
             if ((error instanceof WorkerApiError && [401, 409].includes(error.status)) || heartbeatFailures >= 3) controller.abort();
           }).finally(() => { heartbeatBusy = false; });
         }, 20_000);
         console.log(`Review ${job.id}: running with ${job.provider}.`);
         try {
-          const raw = z.object({ source: z.object({ repository: z.string(), commit: z.string(), files: z.array(z.object({ path: z.string(), content: z.string() })), coverage: z.object({ readFiles: z.number(), eligibleFiles: z.number(), omittedFiles: z.number(), truncatedFiles: z.number(), limitations: z.array(z.string()) }) }), request: requestSnapshotSchema }).parse(await api(`${base}/context`, body));
+          await event("SOURCE", "Fetching a read-only sample of the saved repository commit.");
+          const raw = z.object({ source: z.object({ repository: z.string(), commit: z.string(), files: z.array(z.object({ path: z.string(), content: z.string() })), coverage: z.object({ readFiles: z.number(), eligibleFiles: z.number(), omittedFiles: z.number(), truncatedFiles: z.number(), limitations: z.array(z.string()) }) }), request: requestSnapshotSchema, discussion: discussionSchema.optional() }).parse(await api(`${base}/context`, body));
           const source: SourceSnapshot = raw.source;
           if (stopping || controller.signal.aborted) break;
-          const report = await runReview(job.provider, binary(job.provider), { source, request: raw.request }, controller.signal);
+          await event("MODEL", `${source.files.length} files sampled. ${job.provider} is preparing a private reply and effort range.`);
+          const report = await runReview(job.provider, binary(job.provider), { source, request: raw.request, ...(raw.discussion ? { discussion: raw.discussion } : {}) }, controller.signal, text => { void event("MESSAGE", text); });
+          await eventQueue;
+          await event("RESULT", "Reply validated. Uploading the private draft for operator review.");
           // A lost upload response retries the SAME attempt. The server accepts one result.
           for (let retry = 0; ; retry++) {
             try { await api(`${base}/complete`, { ...body, report }); break; }
-            catch (e) { if (controller.signal.aborted || retry >= 2 || (e instanceof WorkerApiError && e.status < 500)) throw e; await delay(2000); }
+            catch (e) { if (controller.signal.aborted || retry >= 2 || (e instanceof WorkerApiError && e.status < 500)) throw e; await wait(2000); }
           }
           console.log(`Review ${job.id}: private draft ready in backoffice.`);
         } catch (error) {
           const code = error instanceof ProviderFailure ? error.code : error instanceof WorkerApiError && /NO_REVIEW_SOURCE|REPOSITORY_MOVED|EMPTY_REPOSITORY/.test(error.code) ? "SOURCE" : error instanceof WorkerApiError && /GITHUB|REPOSITORY/.test(error.code) ? "CONNECTION" : "NETWORK";
-          if (code === "AUTH" || code === "QUOTA") { paused.set(job.provider, Date.now() + 30 * 60_000); console.log(`${job.provider}: paused for 30 minutes (${code}). No API fallback.`); }
+          if (code === "AUTH" || code === "QUOTA") {
+            const until = Date.now() + 30 * 60_000;
+            paused.set(job.provider, until); readiness.set(job.provider, { provider: job.provider, state: code === "AUTH" ? "NEEDS_LOGIN" : "LIMITED", retryAt: new Date(until).toISOString() });
+            await writeFile(cooldownFile, JSON.stringify([...readiness.values()].filter(p => p.state === "LIMITED")), { mode: 0o600 });
+            console.log(`${job.provider}: paused for 30 minutes (${code}). No API fallback.`);
+          } else if (["PROVIDER", "INVALID_REPORT", "TIMEOUT"].includes(code)) {
+            const until = Date.now() + 5 * 60_000; paused.set(job.provider, until);
+            readiness.set(job.provider, { provider: job.provider, state: "ERROR", retryAt: new Date(until).toISOString() });
+          }
           if (!controller.signal.aborted) await api(`${base}/fail`, { ...body, code }).catch(() => { /* lease recovery handles a lost failure upload */ });
           console.log(`Review ${job.id}: stopped (${controller.signal.aborted ? "lease cancelled or worker stopped" : code}).`);
-        } finally { clearInterval(heartbeat); current = null; }
+        } finally {
+          clearInterval(heartbeat); await eventQueue; current = null;
+          if (readiness.get(job.provider)?.state === "BUSY") readiness.set(job.provider, { provider: job.provider, state: "READY" });
+          checkedAt = 0; await status();
+        }
         if (mode === "once") break;
       } catch (error) {
         if (stopping) break;
         if (error instanceof WorkerApiError && error.status === 401) { console.log("Worker access revoked. Pair again in backoffice."); break; }
         console.log("Service unavailable; retrying without starting another review.");
         if (mode === "once") throw new Error("Worker could not reach its queue.");
-        await delay(20_000);
+        await wait(20_000);
       }
     }
   } finally { process.off("SIGINT", stop); process.off("SIGTERM", stop); await unlink(lockFile).catch(() => {}); }

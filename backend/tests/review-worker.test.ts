@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { eligibleSource, redactSource } from "../src/reviews/source.js";
-import { claudeArguments, codexArguments, subscriptionEnvironment } from "../src/worker/provider.js";
+import { claudeArguments, codexArguments, subscriptionEnvironment, visibleMessage } from "../src/worker/provider.js";
 describe("subscription review boundaries", () => {
   it("excludes secrets, instructions, artifacts and traversal paths", () => {
     for (const path of [".env", ".github/workflows/build.yml", "AGENTS.md", "CLAUDE.md", "src/credentials.json", "node_modules/x.ts", "data/customers.json", "../auth.ts", "/absolute.ts", "package-lock.json", "config/production.json", "appsettings.Production.json", "src/environments/environment.prod.ts"]) expect(eligibleSource(path), path).toBe(false);
@@ -18,5 +18,12 @@ describe("subscription review boundaries", () => {
   it("disables tools/customizations and requires subscription authentication", () => {
     const codex = codexArguments("/tmp/fixture"); expect(codex).toContain("forced_login_method=\"chatgpt\""); expect(codex).toContain("--ignore-user-config"); expect(codex).toContain("--ephemeral"); expect(codex).toContain("shell_tool"); expect(codex).toContain("plugins"); expect(codex).not.toContain("--dangerously-bypass-approvals-and-sandbox");
     const claude = claudeArguments("{}"); expect(claude).toContain("--safe-mode"); expect(claude[claude.indexOf("--tools") + 1]).toBe(""); expect(claude).not.toContain("--bare"); expect(claude).toContain("--no-session-persistence");
+  });
+  it("reports only visible agent messages and redacts recognizable credentials", () => {
+    expect(visibleMessage(JSON.stringify({ type: "item.completed", item: { type: "reasoning", text: "private analysis" } }))).toBeNull();
+    expect(visibleMessage(JSON.stringify({ type: "item.completed", item: { type: "command_execution", text: "secret command" } }))).toBeNull();
+    const text = visibleMessage(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: `Ready. Authorization: Bearer ${"x".repeat(43)}` } }));
+    expect(text).toContain("Ready."); expect(text).not.toContain("x".repeat(43));
+    expect(visibleMessage("malformed transcript")).toBeNull();
   });
 });

@@ -123,6 +123,8 @@ model ReviewWorker {
   createdAt DateTime @default(now())
   lastSeenAt DateTime?
   revokedAt DateTime?
+  providerStatus Json?
+  statusAt DateTime?
   jobs ReviewJob[]
 }
 
@@ -149,6 +151,11 @@ model ReviewJob {
   coverage Json?
   result Json?
   errorCode String?
+  instructions String?
+  parentJobId String? @db.Uuid
+  previousTurns Json?
+  activity Json?
+  activityOmitted Int @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([status, createdAt])

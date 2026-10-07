@@ -15,11 +15,12 @@ describe("worker shutdown", () => {
       const paths: string[] = [];
       vi.stubGlobal("fetch", vi.fn(async (url: string) => {
         paths.push(url);
+        if (url.endsWith("/status")) return Response.json({ saved: true });
         process.emit("SIGTERM");
         return Response.json({ job: { id: randomUUID(), attemptId: randomUUID(), provider: "codex" } });
       }));
       await main(["once"], config);
-      expect(paths).toHaveLength(1); expect(paths[0]).toContain("/claim"); expect(runReview).not.toHaveBeenCalled();
+      expect(paths.filter(p => p.endsWith("/claim"))).toHaveLength(1); expect(runReview).not.toHaveBeenCalled();
     } finally { vi.unstubAllGlobals(); await rm(dir, { recursive: true, force: true }); }
   });
 });

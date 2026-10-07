@@ -118,4 +118,67 @@ describe.skipIf(!dbUrl)("private local review queue", () => {
     expect((await workerPost(`/jobs/${id}/complete`, w.token, { attemptId, report })).statusCode).toBe(409);
     await prisma.reviewJob.update({ where: { id }, data: { status: "CANCELLED" } });
   });
+  it("reports provider readiness privately while idle and rejects revoked status reporters", async () => {
+    const w = await pair();
+    expect((await workerPost("/status", w.token, { providers: [{ provider: "codex", state: "NEEDS_LOGIN" }] })).statusCode).toBe(200);
+    const view = await app.inject({ url: "/v1/operator/review-workers", headers: { cookie: operator.cookie } });
+    const row = view.json<{ workers: { id: string; providerStatus: unknown; lastSeenAt: unknown }[] }>().workers.find(r => r.id === w.worker.id)!;
+    expect(row.providerStatus).toEqual([{ provider: "codex", state: "NEEDS_LOGIN" }]); expect(row.lastSeenAt).toBeTruthy(); expect(view.body).not.toContain(w.token);
+    expect((await app.inject({ url: "/v1/operator/review-workers", headers: { cookie: customer.cookie } })).statusCode).toBe(403);
+    expect((await workerPost("/status", w.token, { providers: [{ provider: "codex", state: "READY", secret: "not accepted" }] })).statusCode).toBe(400);
+    await post(`/v1/operator/review-workers/${w.worker.id}/revoke`, operator.cookie, {});
+    expect((await workerPost("/status", w.token, { providers: [{ provider: "codex", state: "READY" }] })).statusCode).toBe(401);
+  });
+  it("fences and redacts private activity and bounds retained progress", async () => {
+    const p = await project(), w = await pair(), id = await queue(p.id), attemptId = randomUUID();
+    await workerPost("/claim", w.token, { attemptId, providers: ["codex"] });
+    const event = { id: randomUUID(), kind: "MESSAGE", text: `Visible reply. Authorization: Bearer ${"x".repeat(43)}` };
+    for (let i = 0; i < 2; i++) expect((await workerPost(`/jobs/${id}/events`, w.token, { attemptId, event })).statusCode).toBe(200);
+    expect((await prisma.reviewJob.findUniqueOrThrow({ where: { id } })).activity).toHaveLength(1);
+    const view = await app.inject({ url: `/v1/operator/projects/${p.id}/review-jobs`, headers: { cookie: operator.cookie } });
+    expect(view.body).toContain("Visible reply"); expect(view.body).not.toContain("x".repeat(43));
+    expect((await workerPost(`/jobs/${id}/events`, w.token, { attemptId: randomUUID(), event })).statusCode).toBe(409);
+    const w2 = await pair(); expect((await workerPost(`/jobs/${id}/events`, w2.token, { attemptId, event })).statusCode).toBe(409);
+    for (let i = 0; i < 61; i++) await workerPost(`/jobs/${id}/events`, w.token, { attemptId, event: { id: randomUUID(), kind: "MODEL", text: `Progress ${i}` } });
+    const stored = await prisma.reviewJob.findUniqueOrThrow({ where: { id } }); expect(stored.activity).toHaveLength(60); expect(stored.activityOmitted).toBe(2);
+    expect((await app.inject({ url: `/v1/projects/${p.id}`, headers: { cookie: customer.cookie } })).body).not.toContain("Progress 60");
+    await prisma.reviewJob.update({ where: { id }, data: { status: "CANCELLED" } });
+    expect((await workerPost(`/jobs/${id}/events`, w.token, { attemptId, event })).statusCode).toBe(409);
+  });
+  it("continues a grounded operator conversation idempotently and rejects stale or foreign replies", async () => {
+    // The earlier disconnect fixture deliberately cleared this customer's connection.
+    await prisma.reviewSession.update({ where: { id: connections[0]! }, data: { tokenEncrypted: encrypt("fixture-customer-access", env.TOKEN_ENCRYPTION_KEY) } });
+    const p = await project(), w = await pair(), id = await queue(p.id), attemptId = randomUUID();
+    await workerPost("/claim", w.token, { attemptId, providers: ["codex"] });
+    await workerPost(`/jobs/${id}/context`, w.token, { attemptId }); await workerPost(`/jobs/${id}/complete`, w.token, { attemptId, report });
+    const nextId = randomUUID(), body = { id: nextId, version: 2, provider: "claude", instructions: "Can we ship the session flow separately?", parentJobId: id };
+    for (let i = 0; i < 2; i++) expect((await post(`/v1/operator/projects/${p.id}/review-jobs`, operator.cookie, body)).statusCode).toBe(200);
+    expect(await prisma.reviewJob.count({ where: { id: nextId } })).toBe(1);
+    expect((await post(`/v1/operator/projects/${p.id}/review-jobs`, operator.cookie, { ...body, instructions: "Changed instruction" })).statusCode).toBe(409);
+    const nextAttempt = randomUUID(); await workerPost("/claim", w.token, { attemptId: nextAttempt, providers: ["claude"] });
+    const context = await workerPost(`/jobs/${nextId}/context`, w.token, { attemptId: nextAttempt });
+    expect((await prisma.reviewJob.findUniqueOrThrow({ where: { id: nextId } })).provider).toBe("claude");
+    expect(context.json().discussion.instructions).toBe(body.instructions); expect(context.json().discussion.previous[0].summary).toBe(report.summary);
+    expect((await app.inject({ url: `/v1/projects/${p.id}`, headers: { cookie: customer.cookie } })).body).not.toContain(body.instructions);
+    await prisma.projectRequest.create({ data: { projectId: p.id, kind: "FEATURE", title: "New scope during execution", detail: "New request" } });
+    expect((await workerPost(`/jobs/${nextId}/heartbeat`, w.token, { attemptId: nextAttempt })).statusCode).toBe(409);
+    await prisma.reviewJob.update({ where: { id: nextId }, data: { status: "QUEUED", workerId: null, attemptId: null, leaseExpiresAt: null } });
+    expect((await workerPost("/claim", w.token, { attemptId: randomUUID(), providers: ["claude"] })).json().job).toBeNull();
+    expect((await prisma.reviewJob.findUniqueOrThrow({ where: { id: nextId } })).status).toBe("CANCELLED");
+    const other = await project(); expect((await post(`/v1/operator/projects/${other.id}/review-jobs`, operator.cookie, { ...body, id: randomUUID(), version: 1 })).statusCode).toBe(409);
+    await prisma.projectRequest.create({ data: { projectId: p.id, kind: "FEATURE", title: "Changed scope", detail: "Add another workflow" } });
+    expect((await post(`/v1/operator/projects/${p.id}/review-jobs`, operator.cookie, { ...body, id: randomUUID(), version: 3 })).json().error.code).toBe("STALE_CONVERSATION");
+  });
+  it("pages all review turns without accepting another project's cursor", async () => {
+    const p = await project(), another = await project();
+    for (let i = 0; i < 12; i++) await prisma.reviewJob.create({ data: { id: randomUUID(), projectId: p.id, provider: "codex", status: "CANCELLED", commit: "a".repeat(40), repositoryUrl: p.repositoryUrl!, inputDigest: "fixture", requestSnapshot: { summary: p.summary, requests: [] }, instructions: `Question ${i}` } });
+    const first = await app.inject({ url: `/v1/operator/projects/${p.id}/review-jobs`, headers: { cookie: operator.cookie } }); expect(first.json().jobs).toHaveLength(10);
+    const savedId = first.json<{ jobs: { id: string }[] }>().jobs[0]!.id;
+    expect((await app.inject({ url: `/v1/operator/projects/${p.id}/review-jobs/${savedId}`, headers: { cookie: customer.cookie } })).statusCode).toBe(403);
+    expect((await app.inject({ url: `/v1/operator/projects/${another.id}/review-jobs/${savedId}`, headers: { cookie: operator.cookie } })).statusCode).toBe(404);
+    expect((await app.inject({ url: `/v1/operator/projects/${p.id}/review-jobs/${savedId}`, headers: { cookie: operator.cookie } })).statusCode).toBe(200);
+    const second = await app.inject({ url: `/v1/operator/projects/${p.id}/review-jobs?cursor=${first.json().nextCursor}`, headers: { cookie: operator.cookie } }); expect(second.json().jobs).toHaveLength(2); expect(second.json().nextCursor).toBeNull();
+    expect(new Set([...first.json().jobs, ...second.json().jobs].map((j: { id: string }) => j.id)).size).toBe(12);
+    expect((await app.inject({ url: `/v1/operator/projects/${another.id}/review-jobs?cursor=${first.json().nextCursor}`, headers: { cookie: operator.cookie } })).statusCode).toBe(404);
+  });
 });

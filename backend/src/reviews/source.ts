@@ -3,6 +3,8 @@ import type { GitHubClient } from "../github/client.js";
 import { parseRepositoryUrl } from "../github/client.js";
 import { AppError } from "../shared/errors.js";
 import type { SourceSnapshot } from "./types.js";
+import { redactText } from "./redaction.js";
+export const redactSource = redactText;
 
 export function eligibleSource(path: string) {
   return path.length <= 300 && !path.split("/").some(p => !p || p === "." || p === "..") &&
@@ -11,14 +13,6 @@ export function eligibleSource(path: string) {
     !/(^|\/)(?:appsettings|settings|environment|firebase|google-services|service-account|tsconfig|next\.config|vite\.config)(?:[._-]|$)/i.test(path) &&
     !/(secret|credential|private.?key|password|token|\.lock$|lock\.json$|lock\.ya?ml$|\.min\.)/i.test(path) &&
     /\.(tsx?|jsx?|mjs|cjs|py|go|rs|java|kt|cs|php|rb|vue|svelte|sql|graphql|prisma|json|md|ya?ml|html|css)$/i.test(path);
-}
-export function redactSource(content: string) {
-  return content
-    .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?(?:-----END [^-]*PRIVATE KEY-----|$)/g, "[REDACTED PRIVATE KEY]")
-    .replace(/\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{16,}|sk_(?:live|test)_[A-Za-z0-9]{12,}|gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16})\b/g, "[REDACTED CREDENTIAL]")
-    .replace(/((?:[A-Za-z0-9_-]*(?:api[_-]?key|secret|password|access[_-]?token))["']?\s*[=:]\s*)["'`][^"'`\r\n]*["'`]/gi, '$1"[REDACTED]"')
-    .replace(/((?:api[_-]?key|secret|password|access[_-]?token)\s*[:=]\s*)(?!["'`])[^\s,;}]+/gi, '$1[REDACTED]')
-    .replace(/\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'`<>/]+@[^\s"'`<>]+/g, "[REDACTED URL WITH CREDENTIALS]");
 }
 export async function sourceSnapshot(github: GitHubClient, url: string, commit: string, token: string, validate?: () => Promise<unknown>): Promise<SourceSnapshot> {
   z.string().regex(/^[a-f0-9]{40}$/).parse(commit);

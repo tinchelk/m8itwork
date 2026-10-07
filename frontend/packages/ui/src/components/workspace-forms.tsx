@@ -9,6 +9,7 @@ export type Save = (
   path: string,
   data: unknown,
   message: string,
+  onFailure?: (error: unknown) => void,
 ) => Promise<boolean>;
 const data = (event: FormEvent<HTMLFormElement>) =>
   Object.fromEntries(new FormData(event.currentTarget));
@@ -302,7 +303,7 @@ export function OperatorForms({
   }, [pendingImport, tab, operatorDraft]);
   return (
     <section id="operator-tools" className="portal-card operator-tools">
-      <ReviewAssistant project={project} save={save} busy={busy} onApply={(report, target) => { setTab(target); setPendingImport({ report, target }); }} />
+      <ReviewAssistant key={`${accountId}:${project.id}`} accountId={accountId} project={project} save={save} busy={busy} onApply={(report, target) => { setTab(target); setPendingImport({ report, target }); }} />
       {importNotice && <p role="status" className="portal-notice">{importNotice}</p>}
       <p className="portal-kicker">PROJECT TEAM</p>
       <h2>Keep the customer in the loop.</h2>

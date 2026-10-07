@@ -1,0 +1,20 @@
+# Allow only the build inputs; never send .env, private state, or the frontend.
+**
+!backend/
+!backend/package.json
+!backend/package-lock.json
+!backend/tsconfig.json
+!backend/src/
+!backend/src/worker/
+!backend/src/worker/*.ts
+!backend/src/reviews/
+!backend/src/reviews/types.ts
+!backend/src/reviews/redaction.ts
+!backend/src/crypto.ts
+!worker/
+!worker/package.json
+!worker/package-lock.json
+!worker/tsconfig.json
+!worker/entrypoint.sh
+!worker/run-worker.sh
+!worker/smoke.mjs

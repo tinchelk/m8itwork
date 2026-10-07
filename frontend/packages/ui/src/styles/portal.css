@@ -1191,9 +1191,25 @@
 .review-calculator label { display: grid; gap: 8px; }
 .worker-list { list-style: none; padding: 0; }
 .worker-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; border-top: 1px solid #3a5466; padding: 12px 0; gap: 12px; }
+.agent-question { display: grid; gap: 8px; margin: 18px 0; }
+.agent-question textarea { width: 100%; min-height: 110px; }
+.agent-conversation, .review-activity, .review-provider-panel { border: 1px solid #3a5466; border-radius: 10px; padding: 16px; margin: 18px 0; overflow-wrap: anywhere; }
+.agent-conversation ol, .review-activity ol { list-style: none; padding: 0; }
+.agent-conversation li, .review-activity li { border-top: 1px solid #3a5466; padding: 14px 0; }
+.review-activity time { display: block; color: #b6cad1; font-size: .85rem; margin-top: 6px; }
+.worker-provider-status { margin: 12px 0; max-width: 760px; overflow-wrap: anywhere; }
+.worker-provider-status > div { border-left: 2px solid #577789; padding-left: 12px; margin: 14px 0; }
+.provider-state { display: inline-block; margin-left: 12px; color: #d8eeeb; }
+.provider-state.ready { color: #a4e0c6; }
+.provider-state.needs_login, .provider-state.limited, .provider-state.error { color: #f2bc85; }
+.provider-state.stale { color: #b6cad1; }
 .worker-secret { background: #0b1e2c; padding: 18px; border-radius: 8px; margin: 18px 0; }
 .worker-secret label { display: grid; gap: 8px; }
 .worker-secret code { overflow-wrap: anywhere; }
 .review-assistant :focus-visible, .worker-setup :focus-visible { outline: 3px solid #9be7db; outline-offset: 4px; }
 @media (max-width: 640px) { .review-controls { align-items: stretch; } .review-controls .button { width: 100%; } }
 .review-history { display: grid; gap: 8px; margin-top: 20px; }
+
+.review-report-heading { scroll-margin-top: 110px; }
+.review-report-heading:focus { outline: 2px solid var(--mint); outline-offset: 5px; }
+@media (max-width: 720px) { .review-assistant select { font-size: 16px; } }

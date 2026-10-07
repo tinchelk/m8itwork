@@ -1,0 +1,25 @@
+# Standalone worker host: no website, database, inbound ports or Docker socket.
+name: m8itwork-review
+services:
+  worker:
+    image: m8itwork-review-worker:local
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    init: true
+    restart: "on-failure:5"
+    stop_grace_period: 30s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,mode=1777
+    volumes:
+      - worker_home:/home/node
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+volumes:
+  worker_home:

@@ -92,3 +92,7 @@ See [docs/STRIPE_SETUP.md](docs/STRIPE_SETUP.md) for server-only configuration a
 Run customer development with `npm --prefix frontend run dev:customer` and the backoffice with `npm --prefix frontend run dev:admin`. Configure backend `ADMIN_ORIGIN` and frontend `NEXT_PUBLIC_CUSTOMER_ORIGIN`/`NEXT_PUBLIC_ADMIN_ORIGIN` alongside the API URL. Existing `/workspace` and customer-site `/admin` links redirect to their new destinations and preserve project/payment parameters. See [dashboard/backoffice acceptance](docs/DASHBOARD_BACKOFFICE.md).
 
 The backoffice can queue a private AI-assisted repository review for a local subscription worker. See [Local review worker](docs/REVIEW_WORKER.md) for pairing, Codex/Claude setup, consent, source limits, recovery, and the human review/estimate workflow. Subscription logins stay on the operator’s machine; the service does not execute customer code or publish generated reports automatically.
+
+## Docker review worker
+
+Run the worker on a dedicated Docker host using `compose.worker.yml`. It builds the Node worker and pinned Codex/Claude CLIs from this repo, keeps pairing/login state in a private persistent volume, and connects outbound to the existing Railway queue. Follow [Docker worker setup](docs/DOCKER_WORKER.md) to pair, sign in and verify the subscription, then run `docker compose -f compose.worker.yml up -d`. The Docker host requires neither the API/database nor the Mac checkout. Stop the worker before setup commands or moving to another host.

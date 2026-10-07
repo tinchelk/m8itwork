@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, type RefObject } from "react";
+import { useCallback, useEffect, type RefObject } from "react";
 
 const PREFIX = "m8-workspace-draft:";
 const TTL = 60 * 60 * 1000;
@@ -55,7 +55,7 @@ export function useFormDraft(
   restoreVersion: unknown = null,
 ) {
   const key = `${PREFIX}${accountId}:${formId}`;
-  function capture() {
+  const capture = useCallback(() => {
     const form = ref.current;
     if (!form) return;
     const fields: Record<string, string> = {};
@@ -77,14 +77,14 @@ export function useFormDraft(
     } catch {
       /* Storage is optional; the mounted form still retains input. */
     }
-  }
-  function clear() {
+  }, [key, ref]);
+  const clear = useCallback(() => {
     try {
       sessionStorage.removeItem(key);
     } catch {
       /* Optional storage. */
     }
-  }
+  }, [key]);
   useEffect(() => {
     const form = ref.current;
     if (!form) return;

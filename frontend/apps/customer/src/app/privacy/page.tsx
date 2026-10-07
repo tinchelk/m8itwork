@@ -14,7 +14,7 @@ export default function Privacy() {
           <br />
           What we keep.
         </h1>
-        <p>Updated October 6, 2026.</p>
+        <p>Updated October 7, 2026.</p>
         <h2>Your project brief</h2>
         <p>
           We store your name, email, project details, demo link, selected
@@ -90,8 +90,12 @@ export default function Privacy() {
         <p>
           Source passes temporarily through our server and local worker; we do
           not retain source snapshots in our application database. We retain the
-          private draft report, evidence paths, coverage limitations, and a
-          bounded request snapshot with your project. The operator checks and
+          private draft report, evidence paths, coverage limitations, a bounded
+          request snapshot, operator review prompts, and visible agent replies
+          and progress messages with your project. These review records are
+          accessible only to authorized operators. Internal model reasoning and
+          raw provider transcripts are not retained by our application. Follow-up
+          questions use the same read-only review boundaries. The operator checks and
           edits the draft before publishing a review or quote. Provider processing
           and retention follow the subscription account’s settings and the
           provider’s policies. You can withdraw permission in your dashboard to
