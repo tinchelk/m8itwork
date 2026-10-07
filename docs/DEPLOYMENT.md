@@ -219,3 +219,22 @@ No real card was saved/removed and no payment was collected. The supplied provid
 ## Account closure rollback constraint (migration 014)
 
 Migration 014 adds Account.closedAt and hashed recovery receipts. Deploy the API before either web app. Keep this additive schema when rolling back. Once any account has closed, do not roll back the API to a pre-closure build: that code ignores closedAt and could sign retained Google/GitHub identities back in. Use a forward fix, or a compatible rollback carrying closed-account authentication and project-write fences. If no compatible API build exists, disable authentication/customer writes before recovery. Historical signed Stripe webhook reconciliation must continue against retained records.
+
+## Customer Close account — October 7, 2026
+
+Reviewed milestone `d6a492aa783cbbafa978a7fbff07a1ef4680726c` adds Account → Close account, an account-bound typed confirmation, all-device sign-out, credential retirement and withdrawal of unagreed requests/reviews. Agreed work, unresolved payment attempts/disputes and team/worker ownership require a support check. Project and billing records are retained read-only in backoffice, including proposal terms; Stripe cards are retained unless the customer removes them first. See [ACCOUNT_CLOSURE.md](ACCOUNT_CLOSURE.md) for scope, acceptance and the three passed review gates.
+
+| Resource | Verified release identifier |
+| --- | --- |
+| API deployment | `3701ee80-c289-4335-9a6f-2e690a6fa37b` — SUCCESS |
+| Customer deployment | `347145a4-452a-4146-b182-3c8d53129acd` — SUCCESS |
+| Backoffice deployment | `b989b878-c3b5-4f89-b676-5f400ec342ba` — SUCCESS |
+| Listed backup before migration 014 | `6eed045e-8800-4fdb-8e20-b7dd9e9c73a0` — named `before-account-closure-migration014-d6a492a`, 932 MB referenced |
+| Applied migration | `202610070014_account_closure` — startup confirms all migrations applied |
+| Code CI run | [37663800197](https://github.com/tinchelk/m8itwork/actions/runs/37663800197) — SUCCESS |
+
+Exact Git archives excluded ignored credentials/runtime files. The API was deployed and verified before both web apps. Local and code CI verification passed all 165 backend tests, all 198 browser checks without retries, lint/types and both production frontend builds. CI passed seven native Linux worker-container checks. Staff independently passed 51 focused tests and a closure-wins message-concurrency probe; the committed test additionally verifies message-wins serialization. No closure review findings remain or are deferred. Worker code/images/credentials were unchanged.
+
+Runtime: Account, Billing, Dashboard, Privacy, backoffice and API health return HTTPS 200. Anonymous closure returns 401, foreign-origin closure 403, invalid typed confirmation 400, and a read-only status probe for a nonexistent receipt returns `{closed:false}`. No synthetic account was created or closed in production. Real signed-in Chrome shows the secondary Close account action, correct account identity, retention explanations, safe Keep account focus and disabled submit until typed confirmation. Keep account dismisses the dialog and restores trigger focus; the real account remains signed in. The proof capture is only in ignored `backend/var/preview-account-close-production.png`. No authenticated closure, project, message, card or payment mutation was submitted for this runtime check. Retained closed-customer operator history is verified with database/browser fixtures rather than claimed as a production closure check.
+
+The migration-014 rollback constraint above takes precedence over earlier generic rollback instructions. After any closure exists, preserve closed-account auth/mutation fences or disable auth/customer writes before recovery; do not select a pre-closure API deployment while sign-in remains enabled.
