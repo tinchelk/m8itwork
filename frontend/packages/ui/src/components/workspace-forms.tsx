@@ -4,6 +4,9 @@ import type { Connection, Inventory, Project } from "./workspace-types";
 import { API, api, stageLabels, WorkspaceError } from "./workspace-types";
 import { ReviewAssistant, reviewText, type ReviewReport } from "./review-assistant";
 import { markNewProjectReturn, useFormDraft } from "./workspace-drafts";
+import { SelectField } from "./form-controls";
+import { DateField } from "./date-field";
+import { RESTORE_FIELD } from "./field-events";
 
 export type Save = (
   path: string,
@@ -134,14 +137,11 @@ export function NewProjectForm({
         {connected && !loading && !connection!.repositories.length && !connectionError ? <p className="portal-notice">No repositories shared yet. Choose your app in GitHub, then refresh below.</p> : null}
         {connected && Boolean(connection?.repositories.length) ? <div>
           <label htmlFor="project-repository">GitHub repository</label>
-          <select id="project-repository" name="repositoryUrl" defaultValue="" required={!connection?.truncated} disabled={busy || !ready || !connection?.repositories.length} onChange={event => {
-            const link = event.currentTarget.form?.elements.namedItem("repositoryLink") as HTMLInputElement | null;
+          <SelectField id="project-repository" name="repositoryUrl" aria-label="GitHub repository" defaultValue="" placeholder="Choose your app’s repository" repository required={!connection?.truncated} disabled={busy || !ready || !connection?.repositories.length} onValueChange={() => {
+            const link = formRef.current?.elements.namedItem("repositoryLink") as HTMLInputElement | null;
             if (link) link.value = "";
             setFormError(null);
-          }}>
-            <option value="">Choose a repository</option>
-            {connection?.repositories.map(repo => <option key={repo.name} value={repo.url}>{repo.name}{repo.private ? " · private" : ""}</option>)}
-          </select>
+          }} options={connection!.repositories.map(repo => ({ value: repo.url, label: repo.name, detail: repo.private ? "private" : "public" }))} />
         </div> : null}
         {connected ? <div className="project-repository-actions">
           {connection?.installUrl ? <a href={connection.installUrl} target="_blank" rel="noopener noreferrer" onClick={draft.capture}>Choose repositories in GitHub ↗</a> : null}
@@ -149,9 +149,9 @@ export function NewProjectForm({
         </div> : <button type="button" className="portal-plain" disabled={busy || loading} onClick={() => void refreshRepositories()}>Refresh connection</button>}
         {connected && connection?.truncated ? <details>
           <summary>Repository not listed?</summary>
-          <label>GitHub repository link<input name="repositoryLink" type="url" maxLength={500} placeholder="https://github.com/you/your-app" disabled={busy || !ready} aria-invalid={Boolean(formError)} aria-describedby={formError ? "repository-choice-error" : undefined} onChange={event => {
-            const select = event.currentTarget.form?.elements.namedItem("repositoryUrl") as HTMLSelectElement | null;
-            if (select && event.currentTarget.value.trim()) select.value = "";
+          <label>GitHub repository link<input name="repositoryLink" type="url" autoComplete="off" spellCheck={false} maxLength={500} placeholder="https://github.com/you/your-app" disabled={busy || !ready} aria-invalid={Boolean(formError)} aria-describedby={formError ? "repository-choice-error" : undefined} onChange={event => {
+            const field = event.currentTarget.form?.elements.namedItem("repositoryUrl") as HTMLInputElement | null;
+            if (field && event.currentTarget.value.trim()) field.dispatchEvent(new CustomEvent(RESTORE_FIELD, { detail: "" }));
             setFormError(null);
           }} /></label>
           <p className="portal-muted">Only repositories shared with the App can be read.</p>
@@ -210,19 +210,13 @@ export function RequestForm({
       <div className="portal-form-row">
         <label>
           Request type
-          <select name="kind" defaultValue="ISSUE">
-            {[
+          <SelectField name="kind" aria-label="Request type" defaultValue="ISSUE" options={[
               ["ISSUE", "Issue / bug"],
               ["FEATURE", "Feature request"],
               ["SUGGESTION", "Suggestion"],
               ["PRD", "PRD / requirements"],
               ["QUESTION", "Question / scope change"],
-            ].map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+            ].map(([value, label]) => ({ value: value!, label: label! }))} />
         </label>
         <label>
           Title
@@ -250,7 +244,7 @@ export function RequestForm({
         Reference link <span className="portal-muted">(optional)</span>
         <input
           name="referenceUrl"
-          type="url"
+          type="url" autoComplete="off" spellCheck={false}
           maxLength={500}
           placeholder="https://"
         />
@@ -475,7 +469,7 @@ export function OperatorForms({
               Project cost
               <input
                 name="amount"
-                type="number"
+                type="number" inputMode="decimal"
                 min="1"
                 max="1000000"
                 step="0.01"
@@ -484,25 +478,17 @@ export function OperatorForms({
             </label>
             <label>
               Currency
-              <select name="currency">
-                {["USD", "EUR", "GBP", "CAD", "AUD"].map((currency) => (
-                  <option key={currency}>{currency}</option>
-                ))}
-              </select>
+              <SelectField name="currency" aria-label="Currency" options={["USD", "EUR", "GBP", "CAD", "AUD"].map(currency => ({ value: currency, label: currency }))} />
             </label>
           </div>
           <label>
             Payment schedule
-            <select name="paymentMode" defaultValue="UPFRONT">
-              <option value="UPFRONT">Full payment upfront</option>
-              <option value="DEPOSIT_FINAL">
-                50% deposit + 50% before handover
-              </option>
-              <option value="THREE_STAGES">
-                40% deposit + 40% build + 20% handover
-              </option>
-              <option value="CUSTOM">Custom installments</option>
-            </select>
+            <SelectField name="paymentMode" aria-label="Payment schedule" defaultValue="UPFRONT" options={[
+              { value: "UPFRONT", label: "Full payment upfront" },
+              { value: "DEPOSIT_FINAL", label: "50% deposit + 50% before handover" },
+              { value: "THREE_STAGES", label: "40% deposit + 40% build + 20% handover" },
+              { value: "CUSTOM", label: "Custom installments" },
+            ]} />
           </label>
           <details className="custom-payment-plan">
             <summary>Custom payment installments</summary>
@@ -522,7 +508,7 @@ export function OperatorForms({
                     Installment {i + 1} amount
                     <input
                       name={`paymentAmount${i}`}
-                      type="number"
+                      type="number" inputMode="decimal"
                       min="1"
                       max="1000000"
                       step="0.01"
@@ -530,16 +516,18 @@ export function OperatorForms({
                   </label>
                   <label>
                     Installment {i + 1} due
-                    <select
+                    <SelectField
                       name={`paymentGate${i}`}
+                      aria-label={`Installment ${i + 1} due`}
                       defaultValue={
                         i === 0 ? "BEFORE_BUILD" : "BEFORE_HANDOVER"
                       }
-                    >
-                      <option value="BEFORE_BUILD">Before building</option>
-                      <option value="BEFORE_VERIFY">Before verification</option>
-                      <option value="BEFORE_HANDOVER">Before handover</option>
-                    </select>
+                      options={[
+                        { value: "BEFORE_BUILD", label: "Before building" },
+                        { value: "BEFORE_VERIFY", label: "Before verification" },
+                        { value: "BEFORE_HANDOVER", label: "Before handover" },
+                      ]}
+                    />
                   </label>
                 </div>
               </div>
@@ -547,9 +535,9 @@ export function OperatorForms({
           </details>
           <label>
             Estimated delivery date
-            <input
+            <DateField
               name="deliveryDate"
-              type="date"
+              aria-label="Estimated delivery date"
               min={new Date().toISOString().slice(0, 10)}
               required
             />
@@ -606,13 +594,7 @@ export function OperatorForms({
         >
           <label>
             Project stage
-            <select name="stage" defaultValue={project.stage}>
-              {Object.entries(stageLabels).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
+            <SelectField name="stage" aria-label="Project stage" defaultValue={project.stage} options={Object.entries(stageLabels).map(([value, label]) => ({ value, label }))} />
           </label>
           <label>
             Update title

@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, type RefObject } from "react";
+import { RESTORE_FIELD } from "./field-events";
 
 const PREFIX = "m8-workspace-draft:";
 const TTL = 60 * 60 * 1000;
@@ -111,8 +112,10 @@ export function useFormDraft(
             !["checkbox", "password"].includes(field.type)) ||
             field instanceof HTMLTextAreaElement ||
             field instanceof HTMLSelectElement)
-        )
-          field.value = value;
+        ) {
+          if (field.dataset.uiField) field.dispatchEvent(new CustomEvent(RESTORE_FIELD, { detail: value }));
+          else field.value = value;
+        }
       }
     } catch {
       /* Invalid or unavailable drafts are ignored. */

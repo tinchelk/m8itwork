@@ -1,3 +1,4 @@
+import { chooseOption } from "./fixtures/fields";
 import { test, expect } from "@playwright/test";
 import { mockWorkspace, publishProposal } from "./fixtures/workspace";
 
@@ -116,9 +117,8 @@ test("customer and admin agree installments, converse, pay, track work and compl
       "Customers can create and cancel recurring bookings and complete checkout.",
     );
   await page.getByLabel("Project cost", { exact: true }).fill("1250");
-  await page
-    .getByRole("combobox", { name: "Payment schedule", exact: true })
-    .selectOption("DEPOSIT_FINAL");
+  await chooseOption(page
+    .getByRole("combobox", { name: "Payment schedule", exact: true }), "DEPOSIT_FINAL");
   await page.getByLabel("Estimated delivery date").fill("2099-12-01");
   await page
     .getByLabel("Assumptions & conditions")
@@ -154,7 +154,7 @@ test("customer and admin agree installments, converse, pay, track work and compl
   await page
     .getByRole("button", { name: "Progress update", exact: true })
     .click();
-  await page.getByLabel("Project stage").selectOption("BUILDING");
+  await chooseOption(page.getByLabel("Project stage"), "BUILDING");
   await page.getByLabel("Update title").fill("Recurring bookings are underway");
   await page
     .getByLabel("What changed / what happens next")
@@ -175,16 +175,15 @@ test("customer and admin agree installments, converse, pay, track work and compl
     .getByRole("button", { name: "Add delivery item", exact: true })
     .click();
   await page.getByText("Update this item", { exact: true }).click();
-  await page
-    .getByRole("combobox", { name: "Status", exact: true })
-    .selectOption("DONE");
+  await chooseOption(page
+    .getByRole("combobox", { name: "Status", exact: true }), "DONE");
   await page
     .getByLabel("Checks and result")
     .fill(
       "Weekly booking creation, cancellation, and checkout passed against the agreed examples.",
     );
   await page.getByRole("button", { name: "Save delivery item" }).click();
-  await page.getByLabel("Project stage").selectOption("VERIFYING");
+  await chooseOption(page.getByLabel("Project stage"), "VERIFYING");
   await page.getByLabel("Update title").fill("Acceptance checks passed");
   await page
     .getByLabel("What changed / what happens next")
@@ -209,7 +208,7 @@ test("customer and admin agree installments, converse, pay, track work and compl
   await page
     .getByRole("button", { name: "Progress update", exact: true })
     .click();
-  await page.getByLabel("Project stage").selectOption("COMPLETE");
+  await chooseOption(page.getByLabel("Project stage"), "COMPLETE");
   await page.getByLabel("Update title").fill("Ready for handover");
   await page
     .getByLabel("What changed / what happens next")

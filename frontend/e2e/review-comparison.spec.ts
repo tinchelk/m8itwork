@@ -1,3 +1,4 @@
+import { chooseOption } from "./fixtures/fields";
 import { expect, test, type Page } from "@playwright/test";
 import type { ReviewJob } from "../packages/ui/src/components/review-assistant";
 import { mockWorkspace } from "./fixtures/workspace";
@@ -19,7 +20,7 @@ test("compares independent proposals with shared cost settings and chooses an ed
     return route.fulfill({ json: { id: body.id, jobs: jobs.map(({ id, provider }) => ({ id, provider })) } });
   });
   await page.goto(`http://127.0.0.1:3131/?project=${state.project.id}`);
-  await page.getByLabel("Coding agent").selectOption("both");
+  await chooseOption(page.getByLabel("Coding agent"), "both");
   await page.getByLabel("Follow-up question or review instructions (optional)").fill("Compare the minimum launch scope.");
   await page.getByRole("button", { name: "Compare proposals", exact: true }).click();
   const comparison = page.getByRole("region", { name: "Proposal comparison" });
@@ -66,14 +67,14 @@ test("hands either proposal to the other agent, preserves selected context and c
   const comparison = page.getByRole("region", { name: "Proposal comparison" });
   for (const [from, to, provider] of [["Codex", "Claude", "claude"], ["Claude", "Codex", "codex"]]) {
     await comparison.getByRole("article", { name: `${from} proposal` }).getByRole("button", { name: `Continue with ${to}` }).click();
-    await expect(page.getByLabel("Coding agent")).toHaveValue(provider!);
+    await expect(page.getByLabel("Coding agent")).toHaveAttribute("data-value", provider!);
     await expect(page.getByLabel("Follow-up question or review instructions", { exact: true })).toBeFocused();
     await page.getByLabel("Follow-up question or review instructions", { exact: true }).fill(`Challenge ${from} assumptions.`);
     await page.reload();
     const saved = await page.evaluate(({ projectId }) => JSON.parse(sessionStorage.getItem(`m8-workspace-draft:customer:review-session:${projectId}`)!), { projectId: state.project.id });
     expect(saved.parentJobId).toBe(`${group}-${from!.toLowerCase()}`); expect(saved.provider).toBe(provider);
   }
-  await page.getByLabel("Coding agent").selectOption("both");
+  await chooseOption(page.getByLabel("Coding agent"), "both");
   await expect(page.getByRole("button", { name: "Compare proposals", exact: true })).toBeEnabled();
   expect(await page.evaluate(({ id }) => JSON.parse(sessionStorage.getItem(`m8-workspace-draft:customer:review-session:${id}`)!).parentJobId, { id: state.project.id })).toBeNull();
 });
@@ -82,7 +83,7 @@ test("reconciles a lost comparison response after reload even when both jobs are
   await page.route("**/review-jobs", route => route.fulfill({ json: { jobs: [], onlineWorkers: 1, evidenceDigest: "current" } }));
   await page.route("**/review-comparisons", route => { saved = route.request().postDataJSON(); posted++; state.project.version++; return route.abort("connectionreset"); });
   await page.route("**/review-comparisons/*", route => saved ? route.fulfill({ json: { id: saved.id, jobs: pair(saved.id as string) } }) : route.fulfill({ status: 404, json: { error: { message: "Not saved yet." } } }));
-  await page.goto(`http://127.0.0.1:3131/?project=${state.project.id}`); await page.getByLabel("Coding agent").selectOption("both");
+  await page.goto(`http://127.0.0.1:3131/?project=${state.project.id}`); await chooseOption(page.getByLabel("Coding agent"), "both");
   await page.getByRole("button", { name: "Compare proposals", exact: true }).click();
   await expect(page.getByRole("button", { name: "Retry queue request" })).toBeVisible();
   await page.reload();
@@ -94,7 +95,7 @@ test("a failed group lookup blocks duplicates and an exact retry retains the ori
   await page.route("**/review-jobs", route => route.fulfill({ json: { jobs: [], onlineWorkers: 1 } }));
   await page.route("**/review-comparisons", route => { bodies.push(route.request().postDataJSON()); return route.abort("connectionreset"); });
   await page.route("**/review-comparisons/*", route => route.fulfill({ status: failLookup ? 500 : 404, json: { error: { message: failLookup ? "Comparison lookup temporarily unavailable." : "Not saved." } } }));
-  await page.goto(`http://127.0.0.1:3131/?project=${state.project.id}`); await page.getByLabel("Coding agent").selectOption("both");
+  await page.goto(`http://127.0.0.1:3131/?project=${state.project.id}`); await chooseOption(page.getByLabel("Coding agent"), "both");
   await page.getByLabel("Follow-up question or review instructions (optional)").fill("Only minimum launch scope.");
   await page.getByRole("button", { name: "Compare proposals", exact: true }).click(); await page.reload();
   await expect(page.getByRole("button", { name: "Retry queue request" })).toBeDisabled();
@@ -109,13 +110,13 @@ test("a comparison survives an expired session only for its original operator ac
   await page.route("**/review-comparisons/*", route => route.fulfill({ status: 404, json: { error: { message: "No saved comparison." } } }));
   await page.route("**/review-comparisons", route => { saved = route.request().postDataJSON(); posts++; state.signedOut = true; return route.fulfill({ status: 401, json: { error: { message: "Sign in again; the pending comparison is saved." } } }); });
   const url = `http://127.0.0.1:3131/?project=${state.project.id}`;
-  await page.goto(url); await page.getByLabel("Coding agent").selectOption("both"); await page.getByLabel("Follow-up question or review instructions (optional)").fill("Compare the launch plan.");
+  await page.goto(url); await chooseOption(page.getByLabel("Coding agent"), "both"); await page.getByLabel("Follow-up question or review instructions (optional)").fill("Compare the launch plan.");
   await page.getByRole("button", { name: "Compare proposals", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Sign in to the backoffice.", exact: true })).toBeVisible();
   state.signedOut = false; state.accountId = "other-operator"; await page.goto(url);
-  await expect(page.getByLabel("Coding agent")).toHaveValue("codex"); await expect(page.getByRole("button", { name: "Retry queue request" })).toHaveCount(0);
+  await expect(page.getByLabel("Coding agent")).toHaveAttribute("data-value", "codex"); await expect(page.getByRole("button", { name: "Retry queue request" })).toHaveCount(0);
   state.accountId = "customer"; await page.goto(url);
-  await expect(page.getByLabel("Coding agent")).toHaveValue("both");
+  await expect(page.getByLabel("Coding agent")).toHaveAttribute("data-value", "both");
   await expect(page.getByRole("button", { name: "Retry queue request" })).toBeEnabled();
   const pending = await page.evaluate(({ id }) => JSON.parse(sessionStorage.getItem(`m8-workspace-draft:customer:review-session:${id}`)!).pending, { id: state.project.id });
   expect(pending).toEqual(saved); expect(posts).toBe(1);

@@ -1,4 +1,5 @@
 "use client";
+import { SelectField } from "./form-controls";
 import { WorkerSetup, AiReviewConsent } from "./review-assistant";
 import {
   useCallback,
@@ -831,30 +832,13 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                                 {connection.repositories.length > 0 && (
                                   <label>
                                     Available repositories
-                                    <select
-                                      value={repoUrl}
-                                      onChange={(event) =>
-                                        setRepoUrl(event.target.value)
-                                      }
-                                    >
-                                      <option value="">
-                                        Choose a repository
-                                      </option>
-                                      {connection.repositories.map((repo) => (
-                                        <option key={repo.url} value={repo.url}>
-                                          {repo.name}
-                                          {repo.private
-                                            ? " · private"
-                                            : " · public"}
-                                        </option>
-                                      ))}
-                                    </select>
+                                    <SelectField aria-label="Available repositories" value={repoUrl} onValueChange={setRepoUrl} repository placeholder="Choose your app’s repository" options={connection.repositories.map(repo => ({ value: repo.url, label: repo.name, detail: repo.private ? "private" : "public" }))} />
                                   </label>
                                 )}
                                 <label>
                                   GitHub repository link
                                   <input
-                                    type="url"
+                                    type="url" autoComplete="off" spellCheck={false}
                                     required
                                     value={repoUrl}
                                     onChange={(event) =>

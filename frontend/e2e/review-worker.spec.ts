@@ -1,3 +1,4 @@
+import { chooseOption } from "./fixtures/fields";
 import { expect, test } from "@playwright/test";
 import { mockWorkspace } from "./fixtures/workspace";
 const report = { summary: "Authentication needs verified sessions before launch.", findings: [{ severity: "high", detail: "Session validation is missing from the sample.", evidence: ["src/auth.ts"] }], scope: "Implement signed sessions and route protection.", acceptance: "Verify valid login, invalid credentials, logout and protected access.", assumptions: "Static sample; no workflows were run.", questions: ["Which provider should handle identity?"], effort: { minHours: 8, maxHours: 16, confidence: "low" } };
@@ -78,7 +79,7 @@ test("previous successful drafts remain available after a newer quota failure", 
   ] } }));
   await page.goto(`http://127.0.0.1:3131/?project=${state.project.id}`);
   await expect(page.locator(".review-assistant > .portal-notice").filter({ hasText: "Subscription limit reached" })).toBeVisible();
-  await page.getByLabel("Review history").selectOption("old");
+  await chooseOption(page.getByLabel("Review history"), "old");
   await expect(page.getByRole("button", { name: "Add to review draft" })).toBeEnabled();
   await page.getByRole("button", { name: "Add to review draft" }).click();
   await expect(page.getByLabel("Review summary", { exact: true })).toHaveValue(/Authentication needs verified sessions/);
@@ -100,7 +101,7 @@ test("a confirmed lost queue response does not reuse its ID for a fresh review",
   // Polling observes the committed job after its upload response was lost.
   await expect(page.getByRole("button", { name: "Run a fresh review", exact: true })).toBeVisible({ timeout: 15000 });
   await expect(page.getByLabel("Follow-up question or review instructions (optional)", { exact: true })).toHaveValue("");
-  await page.getByLabel("Coding agent").selectOption("claude");
+  await chooseOption(page.getByLabel("Coding agent"), "claude");
   await page.getByRole("button", { name: "Run a fresh review", exact: true }).click();
   await expect.poll(() => ids.length).toBe(2); expect(ids[0]).not.toBe(ids[1]);
 });
@@ -144,12 +145,12 @@ test("follow-up prompts retry unchanged and clear after acknowledgement", async 
     await route.fulfill({ json: { jobs: [prior], onlineWorkers: 1 } });
   });
   await page.goto(`http://127.0.0.1:3131/?project=${state.project.id}`);
-  await page.getByLabel("Coding agent").selectOption("claude");
+  await chooseOption(page.getByLabel("Coding agent"), "claude");
   await page.getByRole("button", { name: "Ask a follow-up", exact: true }).click();
   const question = page.getByLabel("Follow-up question or review instructions", { exact: true });
   await expect(question).toBeFocused(); await question.fill("What acceptance checks should we agree on?");
   await page.reload();
-  await expect(page.getByLabel("Coding agent")).toHaveValue("claude"); await expect(question).toHaveValue("What acceptance checks should we agree on?");
+  await expect(page.getByLabel("Coding agent")).toHaveAttribute("data-value", "claude"); await expect(question).toHaveValue("What acceptance checks should we agree on?");
   await page.getByRole("button", { name: "Send follow-up", exact: true }).click();
   await expect(page.getByRole("button", { name: "Retry queue request", exact: true })).toBeVisible();
   let failHistory = true;
@@ -161,7 +162,7 @@ test("follow-up prompts retry unchanged and clear after acknowledgement", async 
   await page.reload();
   await expect(page.locator(".review-assistant").getByRole("alert")).toContainText("Review history temporarily unavailable.");
   await expect(page.getByRole("button", { name: "Retry queue request", exact: true })).toBeDisabled();
-  await expect(page.getByLabel("Coding agent")).toHaveValue("claude");
+  await expect(page.getByLabel("Coding agent")).toHaveAttribute("data-value", "claude");
   let failLookup = true;
   await page.route("**/review-jobs/*", route => failLookup ? route.fulfill({ status: 500, json: { error: { message: "Saved review temporarily unavailable." } } }) : route.fulfill({ status: 404, json: { error: { message: "Request not saved yet." } } }));
   failHistory = false; await page.locator(".review-assistant").getByRole("button", { name: "Try again", exact: true }).click();
@@ -193,7 +194,7 @@ test("older conversations remain available and changed evidence blocks continuat
   await page.goto(`http://127.0.0.1:3131/?project=${state.project.id}`);
   await page.getByRole("button", { name: "Load older reviews", exact: true }).click();
   await expect(page.getByText("Saved prompt older", { exact: true })).toBeVisible();
-  await page.getByLabel("Review history").selectOption("older");
+  await chooseOption(page.getByLabel("Review history"), "older");
   await expect(page.getByRole("button", { name: "Ask a follow-up", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Open full reply from", exact: false }).first().click();
   await expect(page.getByRole("heading", { name: /Full reply/ })).toBeFocused();
@@ -216,7 +217,7 @@ test("completed cached activity cannot block the current queue", async ({ page }
   updated = true; state.project.version++; await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(page.getByRole("button", { name: "Run a fresh review", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Load older reviews", exact: true }).click();
-  await page.getByLabel("Review history").selectOption("cached");
+  await chooseOption(page.getByLabel("Review history"), "cached");
   await expect(page.getByRole("button", { name: "Ask a follow-up", exact: true })).toBeEnabled();
 });
 
@@ -234,13 +235,13 @@ test("follow-up recovery belongs to the original account through reauthenticatio
   const state = await mockWorkspace(page, { operator: true }); state.project.stage = "IN_REVIEW"; state.project.aiReviewConsentAt = new Date().toISOString(); state.project.repositoryUrl = "https://github.com/builder/private-app";
   await page.route("**/review-jobs", route => route.fulfill({ json: { onlineWorkers: 1, jobs: [{ id: "prior", status: "SUCCEEDED", provider: "codex", commit: "a".repeat(40), createdAt: new Date().toISOString(), stale: false, result: report, coverage: { readFiles: 2, eligibleFiles: 4, limitations: [] } }] } }));
   const url = `http://127.0.0.1:3131/?project=${state.project.id}`;
-  await page.goto(url); await page.getByLabel("Coding agent").selectOption("claude"); await page.getByRole("button", { name: "Ask a follow-up", exact: true }).click();
+  await page.goto(url); await chooseOption(page.getByLabel("Coding agent"), "claude"); await page.getByRole("button", { name: "Ask a follow-up", exact: true }).click();
   await page.getByLabel("Follow-up question or review instructions", { exact: true }).fill("Keep my selected agent and earlier reply.");
   state.signedOut = true; await page.reload(); await expect(page.getByRole("heading", { name: "Sign in to the backoffice.", exact: true })).toBeVisible();
   state.signedOut = false; state.accountId = "other-operator"; await page.goto(url);
-  await expect(page.getByLabel("Coding agent")).toHaveValue("codex"); await expect(page.getByLabel("Follow-up question or review instructions (optional)", { exact: true })).toHaveValue("");
+  await expect(page.getByLabel("Coding agent")).toHaveAttribute("data-value", "codex"); await expect(page.getByLabel("Follow-up question or review instructions (optional)", { exact: true })).toHaveValue("");
   state.accountId = "customer"; await page.goto(url);
-  await expect(page.getByLabel("Coding agent")).toHaveValue("claude"); await expect(page.getByLabel("Follow-up question or review instructions", { exact: true })).toHaveValue("Keep my selected agent and earlier reply.");
+  await expect(page.getByLabel("Coding agent")).toHaveAttribute("data-value", "claude"); await expect(page.getByLabel("Follow-up question or review instructions", { exact: true })).toHaveValue("Keep my selected agent and earlier reply.");
 });
 
 test("reload reconciles a lost response even after its job leaves the recent page", async ({ page }) => {

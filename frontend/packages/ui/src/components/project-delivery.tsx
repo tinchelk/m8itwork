@@ -3,6 +3,7 @@ import { useRef } from "react";
 import type { Project } from "./workspace-types";
 import type { Save } from "./workspace-forms";
 import { useFormDraft } from "./workspace-drafts";
+import { SelectField } from "./form-controls";
 
 const labels = {
   TODO: "To do",
@@ -81,13 +82,7 @@ export function ProjectDelivery({
                   >
                     <label>
                       Status
-                      <select name="status" defaultValue={item.status}>
-                        {Object.entries(labels).map(([id, label]) => (
-                          <option key={id} value={id}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
+                      <SelectField name="status" aria-label="Status" defaultValue={item.status} options={Object.entries(labels).map(([value, label]) => ({ value, label }))} />
                     </label>
                     <label>
                       Checks and result
@@ -102,7 +97,7 @@ export function ProjectDelivery({
                     <label>
                       Evidence / pull request link (optional)
                       <input
-                        type="url"
+                        type="url" autoComplete="off" spellCheck={false}
                         name="evidenceUrl"
                         maxLength={500}
                         defaultValue={item.evidenceUrl ?? ""}

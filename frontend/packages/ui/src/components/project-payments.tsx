@@ -304,7 +304,7 @@ export function ProjectPayments({
                         <label>
                           Stripe Checkout session ID
                           <input
-                            name="sessionId"
+                            name="sessionId" autoComplete="off" spellCheck={false}
                             pattern="cs_(test_|live_)?[A-Za-z0-9_]{8,200}"
                             required
                             placeholder="cs_test_…"

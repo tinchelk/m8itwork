@@ -1,3 +1,4 @@
+import { chooseOption } from "./fixtures/fields";
 import { test, expect, type Page } from "@playwright/test";
 import { mockWorkspace } from "./fixtures/workspace";
 
@@ -130,7 +131,7 @@ test("resumes an email customer's request after connecting GitHub without restor
   state.accountId = "customer";
   await page.goto("/dashboard?start=1");
   await expect(request).toHaveValue("Add an export workflow to the current app.");
-  await page.getByLabel("GitHub repository", { exact: true }).selectOption("https://github.com/builder/private-app");
+  await chooseOption(page.getByLabel("GitHub repository", { exact: true }), "https://github.com/builder/private-app");
   await page.getByRole("button", { name: "Send for review", exact: true }).click();
   await expect(page.getByRole("heading", { name: "We’re reviewing your next step." })).toBeVisible();
   expect(state.project.contactEmail).toBe("builder@example.invalid");

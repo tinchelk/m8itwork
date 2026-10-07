@@ -1,3 +1,4 @@
+import { chooseOption } from "./fixtures/fields";
 import { test, expect } from "@playwright/test";
 import { mockWorkspace, publishProposal } from "./fixtures/workspace";
 
@@ -128,7 +129,7 @@ test("sends only a repository and request straight to review", async ({ page }, 
     await expect(page.getByLabel(label, { exact: false })).toHaveCount(0);
   }
   await expect(page.getByRole("checkbox")).toHaveCount(0);
-  await page.getByLabel("GitHub repository", { exact: true }).selectOption("https://github.com/builder/private-app");
+  await chooseOption(page.getByLabel("GitHub repository", { exact: true }), "https://github.com/builder/private-app");
   await page.getByLabel("How can we help move it forward?", { exact: false }).fill("Add recurring bookings and improve the checkout journey.");
   await page.screenshot({ path: testInfo.outputPath(`simple-project-${testInfo.project.name}.png`), fullPage: true });
   const createRequest = page.waitForRequest(request => request.url().endsWith("/v1/projects") && request.method() === "POST");
@@ -153,21 +154,21 @@ test("retains both inputs through inspection and save failures and a lost respon
   await page.goto("/dashboard?start=1");
   const repository = page.getByLabel("GitHub repository", { exact: true });
   const request = page.getByLabel("How can we help move it forward?", { exact: false });
-  await repository.selectOption("https://github.com/builder/private-app");
+  await chooseOption(repository, "https://github.com/builder/private-app");
   await request.fill("Add custom reports and a new billing integration.");
   state.failInspection = true;
   await page.getByRole("button", { name: "Send for review", exact: true }).click();
   await expect(page.locator(".portal-error")).toContainText("Repository couldn't be checked");
   expect(state.empty).toBe(true);
   expect(state.creationCalls).toBe(0);
-  await expect(repository).toHaveValue("https://github.com/builder/private-app");
+  await expect(repository).toHaveAttribute("data-value", "https://github.com/builder/private-app");
   await expect(request).toHaveValue("Add custom reports and a new billing integration.");
   state.failCreate = true;
   await page.getByRole("button", { name: "Send for review", exact: true }).click();
   await expect(page.locator(".portal-error")).toContainText("Request wasn't saved");
   await page.reload();
   await page.getByRole("button", { name: "Start a project", exact: true }).click();
-  await expect(repository).toHaveValue("https://github.com/builder/private-app");
+  await expect(repository).toHaveAttribute("data-value", "https://github.com/builder/private-app");
   await expect(request).toHaveValue("Add custom reports and a new billing integration.");
   state.loseCreateResponse = true;
   await page.getByRole("button", { name: "Send for review", exact: true }).click();
@@ -182,7 +183,7 @@ test("retains both inputs through inspection and save failures and a lost respon
 test("keeps an edited request after a lost response and links to the already saved request", async ({ page }) => {
   const state = await mockWorkspace(page, { empty: true });
   await page.goto("/dashboard?start=1");
-  await page.getByLabel("GitHub repository", { exact: true }).selectOption("https://github.com/builder/private-app");
+  await chooseOption(page.getByLabel("GitHub repository", { exact: true }), "https://github.com/builder/private-app");
   const request = page.getByLabel("How can we help move it forward?", { exact: true });
   await request.fill("Add custom reports for our team.");
   state.loseCreateResponse = true;
@@ -199,7 +200,7 @@ test("keeps an edited request after a lost response and links to the already sav
 test("reconnects revoked repository access while keeping the customer signed in and their request", async ({ page }) => {
   const state = await mockWorkspace(page, { empty: true });
   await page.goto("/dashboard?start=1");
-  await page.getByLabel("GitHub repository", { exact: true }).selectOption("https://github.com/builder/private-app");
+  await chooseOption(page.getByLabel("GitHub repository", { exact: true }), "https://github.com/builder/private-app");
   const request = page.getByLabel("How can we help move it forward?", { exact: true });
   await request.fill("Add custom reports for our team.");
   state.expireInspection = true;
@@ -212,7 +213,7 @@ test("reconnects revoked repository access while keeping the customer signed in 
   await page.route("**/v1/github/connect?flow=repositories", route => route.fulfill({ status: 302, headers: { location: "http://127.0.0.1:3130/dashboard?github=connected" } }));
   await page.getByRole("link", { name: "Reconnect GitHub" }).click();
   await expect(request).toHaveValue("Add custom reports for our team.");
-  await expect(page.getByLabel("GitHub repository", { exact: true })).toHaveValue("https://github.com/builder/private-app");
+  await expect(page.getByLabel("GitHub repository", { exact: true })).toHaveAttribute("data-value", "https://github.com/builder/private-app");
   await page.getByRole("button", { name: "Send for review", exact: true }).click();
   await expect(page.getByRole("heading", { name: "We’re reviewing your next step." })).toBeVisible();
 });
@@ -229,7 +230,7 @@ test("keeps repository selection and pasted links mutually exclusive and focuses
   await link.fill("https://github.com/builder/another-app");
   await page.getByText("Repository not listed?", { exact: true }).click();
   const repository = page.getByLabel("GitHub repository", { exact: true });
-  await repository.selectOption("https://github.com/builder/private-app");
+  await chooseOption(repository, "https://github.com/builder/private-app");
   await expect(link).toHaveValue("");
   const inspection = page.waitForRequest(request => request.url().endsWith("/v1/github/inspect") && request.method() === "POST");
   await page.getByRole("button", { name: "Send for review", exact: true }).click();
@@ -261,9 +262,8 @@ test("links a private repository, preserves a failed PRD save, then shows the re
 }, testInfo) => {
   const state = await mockWorkspace(page);
   await page.goto(`/dashboard?project=${state.project.id}`);
-  await page
-    .getByLabel("Available repositories")
-    .selectOption("https://github.com/builder/private-app");
+  await chooseOption(page
+    .getByLabel("Available repositories"), "https://github.com/builder/private-app");
   await page.getByRole("button", { name: "Inspect & link repository" }).click();
   await expect(page.getByRole("status")).toContainText(
     "Repository inventory linked",
@@ -272,7 +272,7 @@ test("links a private repository, preserves a failed PRD save, then shows the re
   await expect(
     page.getByText("Partial inventory", { exact: false }),
   ).toBeVisible();
-  await page.getByLabel("Request type").selectOption("PRD");
+  await chooseOption(page.getByLabel("Request type"), "PRD");
   await page
     .getByLabel("Title", { exact: true })
     .fill("Recurring booking requirements");
@@ -333,7 +333,7 @@ test("recovers a PRD after reauthentication only for its original account", asyn
 }) => {
   const state = await mockWorkspace(page);
   await page.goto(`/dashboard?project=${state.project.id}`);
-  await page.getByLabel("Request type").selectOption("PRD");
+  await chooseOption(page.getByLabel("Request type"), "PRD");
   await page
     .getByLabel("Title", { exact: true })
     .fill("Detailed booking requirements");
@@ -356,7 +356,7 @@ test("recovers a PRD after reauthentication only for its original account", asyn
   await expect(page.getByLabel("Details", { exact: true })).toHaveValue(
     "A long PRD should survive signing in again without leaking to another account.",
   );
-  await expect(page.getByLabel("Request type")).toHaveValue("PRD");
+  await expect(page.getByLabel("Request type")).toHaveAttribute("data-value", "PRD");
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible();
   state.signedOut = false;
@@ -453,7 +453,7 @@ test("team publishes a human review, scope and cost before work updates", async 
   await page
     .getByRole("button", { name: "Progress update", exact: true })
     .click();
-  await page.getByLabel("Project stage").selectOption("BUILDING");
+  await chooseOption(page.getByLabel("Project stage"), "BUILDING");
   await page.getByLabel("Update title").fill("Recurring bookings are underway");
   await page
     .getByLabel("What changed / what happens next")

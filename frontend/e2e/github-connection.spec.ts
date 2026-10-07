@@ -1,3 +1,4 @@
+import { chooseOption } from "./fixtures/fields";
 import { test, expect } from "@playwright/test";
 import { mockWorkspace } from "./fixtures/workspace";
 
@@ -29,7 +30,7 @@ test("recovers a sign-in identity conflict through repository authorization and 
   await expect(page.locator(".portal-error[role=alert]")).toHaveCount(0);
   await expect(page.getByText("Connected as @repository-owner", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Backoffice", exact: true })).toHaveCount(0);
-  await page.getByLabel("GitHub repository", { exact: true }).selectOption(repositories[0]!.url);
+  await chooseOption(page.getByLabel("GitHub repository", { exact: true }), repositories[0]!.url);
   await page.getByRole("button", { name: "Send for review", exact: true }).click();
   await expect(page.getByRole("heading", { name: "We’re reviewing your next step." })).toBeVisible();
   expect(state.project.contactEmail).toBe("builder@example.invalid");

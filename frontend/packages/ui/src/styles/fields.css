@@ -1,0 +1,115 @@
+@import "react-day-picker/style.css";
+
+html { color-scheme: dark; }
+body { background: #0d1b29; color: #f3f5f1; }
+
+/* The open menus are portalled into body, so their theme is self-contained. */
+.select-field, .date-field { width: 100%; min-width: 0; margin-top: 8px; }
+.field-trigger, .portal-shell .field-trigger {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0;
+  min-height: 48px; padding: 12px 14px; border: 1px solid #526f80;
+  border-radius: 9px; background: #0c2030; color: #eef5f3;
+  font: 400 14px/1.5 var(--sans, Arial, sans-serif); text-align: left;
+  cursor: pointer; transition: border-color 120ms, background-color 120ms, box-shadow 120ms;
+}
+.field-trigger:hover:not(:disabled) { background: #142d3d; border-color: #82aaa9; }
+.field-trigger[data-state="open"] { background: #142d3d; border-color: #8bd8ce; box-shadow: 0 0 0 3px #8bd8ce18; }
+.field-trigger:focus-visible, .field-calendar-trigger:focus-visible { outline: 2px solid #99e1d5; outline-offset: 3px; }
+.field-trigger:disabled { opacity: .55; cursor: not-allowed; }
+.field-trigger[data-placeholder] { color: #a7beca; }
+.field-value { display: block; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.field-trigger > span:first-of-type:not(.field-badge):not(.field-chevron) { min-width: 0; flex: 1; }
+.field-leading-icon { flex: 0 0 auto; color: #91c9c7; }
+.field-badge { flex: 0 0 auto; padding: 2px 7px; border: 1px solid #486977; border-radius: 5px; background: #1b3543; color: #bdd5df; font: 500 11px/1.5 var(--sans, Arial, sans-serif); }
+.field-chevron { display: flex; align-items: center; margin-left: auto; color: #9ec6ce; flex: 0 0 auto; }
+.field-trigger[data-state="open"] .field-chevron { transform: rotate(180deg); }
+.field-menu {
+  color-scheme: dark;
+  z-index: 1000; width: var(--radix-select-trigger-width);
+  max-width: calc(100vw - 24px); max-height: min(360px, var(--radix-select-content-available-height));
+  border: 1px solid #63838e; border-radius: 11px; background: #102837;
+  color: #eef5f3; box-shadow: 0 18px 55px #020d18a6, 0 2px 8px #020d1859;
+  overflow: hidden; font: 400 14px/1.5 var(--sans, Arial, sans-serif);
+}
+.field-options { padding: 6px; overscroll-behavior: contain; }
+.field-option {
+  position: relative; display: flex; align-items: center; gap: 10px;
+  min-height: 44px; padding: 10px 36px 10px 12px; border-radius: 6px;
+  cursor: pointer; user-select: none; outline: none;
+}
+.field-option > span:first-of-type { min-width: 0; overflow-wrap: anywhere; }
+.field-option .field-badge { margin-left: auto; }
+.field-option[data-state="checked"] { background: #204449; color: #b8f0e1; }
+.field-option[data-highlighted] { background: #2e525d; color: #fff; box-shadow: inset 0 0 0 1px #8bd8ce80; }
+.field-option[data-disabled] { opacity: .45; cursor: not-allowed; }
+.field-check { display: flex; position: absolute; right: 11px; color: #a6edda; }
+.field-scroll { display: flex; align-items: center; justify-content: center; height: 26px; color: #acdcd5; background: #102837; }
+.field-error { display: block; margin-top: 7px; color: #ffb6a7; font: 400 13px/1.5 var(--sans, Arial, sans-serif); }
+.field-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.field-hint { display: block; margin-top: 7px; color: #abc0cb; font: 400 12px/1.5 var(--sans, Arial, sans-serif); }
+.field-trigger[aria-invalid="true"] { border-color: #ed9987; }
+.field-form-value {
+  position: absolute !important; width: 1px !important; height: 1px !important;
+  min-height: 0 !important; margin: 0 !important; padding: 0 !important;
+  border: 0 !important; clip-path: inset(50%); overflow: hidden;
+}
+.select-field > select[aria-hidden="true"] { display: none; }
+.date-field-control { position: relative; display: flex; align-items: center; }
+.workshop-shell .date-field-control input { padding-right: 52px; margin-top: 0; }
+.field-calendar-trigger { position: absolute; right: 6px; display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #a0d8d1; cursor: pointer; }
+.field-calendar-trigger:hover:not(:disabled) { background: #25444f; }
+.field-calendar-trigger:disabled { opacity: .5; cursor: not-allowed; }
+.field-calendar {
+  z-index: 1000; max-width: calc(100vw - 24px); padding: 14px;
+  border: 1px solid #63838e; border-radius: 12px; background: #102837;
+  color: #eef5f3; box-shadow: 0 18px 55px #020d18a6; font: 400 14px/1.5 var(--sans, Arial, sans-serif);
+}
+.field-calendar .rdp-root { --rdp-accent-color: #a3e6d7; --rdp-accent-background-color: #22484c; --rdp-day-height: 40px; --rdp-day-width: 40px; --rdp-day_button-height: 38px; --rdp-day_button-width: 38px; --rdp-selected-border: 1px solid #a3e6d7; --rdp-today-color: #f2b97f; }
+.field-calendar .rdp-day_button, .field-calendar .rdp-button_previous, .field-calendar .rdp-button_next { border-radius: 7px; cursor: pointer; }
+.field-calendar button:hover:not(:disabled) { background: #2b5059; }
+.field-calendar button:focus-visible { outline: 2px solid #a3e6d7; outline-offset: 1px; }
+.field-calendar .rdp-selected .rdp-day_button { background: #22484c; color: #c3f7e8; }
+.field-calendar .rdp-disabled { opacity: .35; }
+.field-calendar .rdp-weekday { color: #b0c8d3; font-size: 12px; font-weight: 500; }
+.field-calendar .rdp-month_caption { font-size: 14px; }
+.review-controls .select-field, .review-calculator .select-field, .review-history .select-field { margin-top: 0; }
+
+/* Native semantics, shared web appearance across auth, intake and backoffice. */
+.workshop-shell input:not([type="hidden"]):not([type="checkbox"]):not(.field-form-value),
+.workshop-shell textarea {
+  min-height: 48px; border: 1px solid #526f80; border-radius: 9px;
+  background: #0c2030; color: #eef5f3; font-size: 14px; font-weight: 400;
+  padding: 12px 14px; transition: border-color 120ms, box-shadow 120ms;
+}
+.workshop-shell input:not([type="hidden"]):not([type="checkbox"]):not(.field-form-value):hover:not(:disabled), .workshop-shell textarea:hover:not(:disabled) { border-color: #82aaa9; }
+.workshop-shell input:not([type="hidden"]):not([type="checkbox"]):not(.field-form-value):focus-visible, .workshop-shell textarea:focus-visible { border-color: #99e1d5; outline: 2px solid #99e1d5; outline-offset: 3px; }
+.workshop-shell input:not([type="hidden"]):not([type="checkbox"]):not(.field-form-value)[aria-invalid="true"], .workshop-shell textarea[aria-invalid="true"] { border-color: #ed9987; }
+.workshop-shell input:disabled, .workshop-shell textarea:disabled { opacity: .55; cursor: not-allowed; }
+.workshop-shell input[type="number"] { appearance: textfield; }
+.workshop-shell input[type="number"]::-webkit-inner-spin-button, .workshop-shell input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.workshop-shell input[type="checkbox"] {
+  appearance: none; display: inline-block; width: 20px; height: 20px; min-height: 20px;
+  flex: 0 0 20px; padding: 0; border: 1px solid #7192a0; border-radius: 5px;
+  background: #0c2030; cursor: pointer; vertical-align: middle;
+}
+.workshop-shell input[type="checkbox"]:checked {
+  border-color: #98ddcf; background-color: #98ddcf;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill='none' stroke='%230e2731' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round' d='m4.5 10 3.5 3.5 7.5-7.5'/%3E%3C/svg%3E");
+}
+.workshop-shell input[type="checkbox"]:hover:not(:disabled) { border-color: #bcefe2; }
+.workshop-shell input[type="checkbox"]:focus-visible { outline: 2px solid #99e1d5; outline-offset: 3px; }
+.workshop-shell .date-field-control input[type="text"][data-ui-field] { padding-right: 52px; margin-top: 0; }
+@media (max-width: 720px) {
+  .field-trigger, .portal-shell .field-trigger, .field-menu,
+  .workshop-shell input:not([type="hidden"]):not([type="checkbox"]):not(.field-form-value),
+  .workshop-shell textarea { font-size: 16px; }
+  .field-trigger { gap: 8px; }
+  .field-calendar { padding: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .field-trigger, .workshop-shell input, .workshop-shell textarea { transition: none; }
+}
+@media (forced-colors: active) {
+  .workshop-shell input[type="checkbox"] { appearance: auto; }
+  .field-option[data-highlighted], .field-option[data-state="checked"] { outline: 1px solid Highlight; }
+}

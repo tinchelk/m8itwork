@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { SelectField } from "./form-controls";
 import {
   displayDate,
   money,
@@ -66,6 +67,7 @@ export function AdminOverview({
         <label>
           Find a project
           <input
+            name="projectSearch" autoComplete="off"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Project or GitHub account"
@@ -73,15 +75,11 @@ export function AdminOverview({
         </label>
         <label>
           Show
-          <select value={filter} onChange={(e) => setFilter(e.target.value)}>
-            <option value="ALL">All projects</option>
-            <option value="MESSAGES">Unread conversations</option>
-            {Object.entries(stageLabels).map(([id, label]) => (
-              <option key={id} value={id}>
-                {label}
-              </option>
-            ))}
-          </select>
+          <SelectField aria-label="Show" value={filter} onValueChange={setFilter} options={[
+            { value: "ALL", label: "All projects" },
+            { value: "MESSAGES", label: "Unread conversations" },
+            ...Object.entries(stageLabels).map(([value, label]) => ({ value, label })),
+          ]} />
         </label>
       </div>
       <div className="admin-queue">

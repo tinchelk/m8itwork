@@ -81,7 +81,7 @@ export function CustomerAuthPanel({ initialMode = "login", config }: { initialMo
     </>}
     {!verified && !(mode === "signup" && message) && <form onSubmit={submit} className="auth-form">
       {mode === "signup" && <label>Your name<input name="name" autoComplete="name" maxLength={100} required value={name} onChange={event => setName(event.target.value)} disabled={busy} /></label>}
-      {!tokenMode && <label>Email address<input name="email" type="email" autoComplete="email" maxLength={254} required value={email} onChange={event => setEmail(event.target.value)} disabled={busy} /></label>}
+      {!tokenMode && <label>Email address<input name="email" type="email" inputMode="email" spellCheck={false} autoComplete="email" maxLength={254} required value={email} onChange={event => setEmail(event.target.value)} disabled={busy} /></label>}
       {(mode === "signup" || mode === "login" || mode === "reset") && <label>Password<input name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={mode === "login" ? 1 : 12} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} disabled={busy} /></label>}
       {(mode === "signup" || mode === "reset") && <p className="auth-hint">At least 12 characters. A few memorable words work well.</p>}
       {mode === "reset" && <label>Confirm password<input name="confirm" type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={confirm} onChange={event => setConfirm(event.target.value)} disabled={busy} /></label>}
