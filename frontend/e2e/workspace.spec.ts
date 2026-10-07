@@ -11,7 +11,7 @@ test("lands a new customer on the dashboard before explicitly starting a project
   expect(state.operatorRequests).toBe(0);
   await page.screenshot({ path: testInfo.outputPath(`dashboard-empty-${testInfo.project.name}.png`) });
   await page.getByRole("button", { name: "Start a project", exact: true }).click();
-  await expect(page.getByLabel("Project name", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("GitHub repository", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "← Dashboard", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your apps. Their next chapter." })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -119,34 +119,142 @@ test("explains sign-in and blocked configuration without displaying customer dat
     ),
   ).toBe(true);
 });
-test("starts an owned project with goals and access constraints", async ({
-  page,
-}) => {
+test("sends only a repository and request straight to review", async ({ page }, testInfo) => {
   const state = await mockWorkspace(page, { empty: true });
-  await page.goto("/dashboard");
-  await page.getByRole("button", { name: "Start a project", exact: true }).click();
-  await page.getByLabel("Project name", { exact: true }).fill("Bloom bookings");
-  await page.getByLabel("Contact email").fill("builder@example.invalid");
-  await page.getByLabel("Started with").selectOption("Lovable");
-  await page
-    .getByLabel("What would you like to fix or add?")
-    .fill("Add recurring bookings and improve the checkout journey.");
-  await page.getByText("Review without connecting GitHub", { exact: true }).click();
-  await page
-    .getByLabel("Tell us about access constraints")
-    .fill("The repository export is pending; we can share a demo first.");
-  await page.getByRole("checkbox", { name: /authorized to share/ }).check();
-  await page
-    .getByRole("button", { name: "Start project", exact: true })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "Bloom bookings", exact: true }),
-  ).toBeVisible();
-  expect(state.project.contactEmail).toBe("builder@example.invalid");
-  await expect(
-    page.getByRole("button", { name: "Submit for review" }),
-  ).toBeEnabled();
+  await page.goto("/dashboard?start=1");
+  await expect(page.getByRole("heading", { name: "Your repo. Your next step." })).toBeVisible();
+  await expect(page.getByLabel("GitHub repository", { exact: true })).toBeEnabled();
+  for (const label of ["Project name", "Contact email", "Started with", "Demo link", "Tell us about access constraints"]) {
+    await expect(page.getByLabel(label, { exact: false })).toHaveCount(0);
+  }
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
+  await page.getByLabel("GitHub repository", { exact: true }).selectOption("https://github.com/builder/private-app");
+  await page.getByLabel("How can we help move it forward?", { exact: false }).fill("Add recurring bookings and improve the checkout journey.");
+  await page.screenshot({ path: testInfo.outputPath(`simple-project-${testInfo.project.name}.png`), fullPage: true });
+  const createRequest = page.waitForRequest(request => request.url().endsWith("/v1/projects") && request.method() === "POST");
+  await page.getByRole("button", { name: "Send for review", exact: true }).click();
+  expect(Object.keys((await createRequest).postDataJSON()).sort()).toEqual(["consent", "id", "inspectionId", "summary"]);
+  await expect(page.getByRole("heading", { name: "We’re reviewing your next step." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "private-app", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Submit for review" })).toHaveCount(0);
+  expect(state.project.repositoryUrl).toBe("https://github.com/builder/private-app");
+  expect(state.project.stage).toBe("IN_REVIEW");
+  expect(state.project.contactEmail).toBe("");
+  expect(state.inspectionCalls).toBe(1);
+  state.operator = true;
+  await page.goto("http://127.0.0.1:3131/");
+  await page.getByRole("button", { name: /private-app/ }).first().click();
+  await expect(page.getByText("Add recurring bookings and improve the checkout journey.", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Review summary")).toBeVisible();
 });
+
+test("retains both inputs through inspection and save failures and a lost response", async ({ page }) => {
+  const state = await mockWorkspace(page, { empty: true });
+  await page.goto("/dashboard?start=1");
+  const repository = page.getByLabel("GitHub repository", { exact: true });
+  const request = page.getByLabel("How can we help move it forward?", { exact: false });
+  await repository.selectOption("https://github.com/builder/private-app");
+  await request.fill("Add custom reports and a new billing integration.");
+  state.failInspection = true;
+  await page.getByRole("button", { name: "Send for review", exact: true }).click();
+  await expect(page.locator(".portal-error")).toContainText("Repository couldn't be checked");
+  expect(state.empty).toBe(true);
+  expect(state.creationCalls).toBe(0);
+  await expect(repository).toHaveValue("https://github.com/builder/private-app");
+  await expect(request).toHaveValue("Add custom reports and a new billing integration.");
+  state.failCreate = true;
+  await page.getByRole("button", { name: "Send for review", exact: true }).click();
+  await expect(page.locator(".portal-error")).toContainText("Request wasn't saved");
+  await page.reload();
+  await page.getByRole("button", { name: "Start a project", exact: true }).click();
+  await expect(repository).toHaveValue("https://github.com/builder/private-app");
+  await expect(request).toHaveValue("Add custom reports and a new billing integration.");
+  state.loseCreateResponse = true;
+  await page.getByRole("button", { name: "Send for review", exact: true }).click();
+  await expect(page.locator(".portal-error")).toContainText("couldn't reach");
+  const savedId = state.project.id;
+  await page.getByRole("button", { name: "Send for review", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "We’re reviewing your next step." })).toBeVisible();
+  expect(state.project.id).toBe(savedId);
+  expect(state.creationCalls).toBe(3);
+});
+
+test("keeps an edited request after a lost response and links to the already saved request", async ({ page }) => {
+  const state = await mockWorkspace(page, { empty: true });
+  await page.goto("/dashboard?start=1");
+  await page.getByLabel("GitHub repository", { exact: true }).selectOption("https://github.com/builder/private-app");
+  const request = page.getByLabel("How can we help move it forward?", { exact: true });
+  await request.fill("Add custom reports for our team.");
+  state.loseCreateResponse = true;
+  await page.getByRole("button", { name: "Send for review", exact: true }).click();
+  await expect(page.locator(".portal-error")).toContainText("couldn't reach");
+  await request.fill("Add an integration with our CRM instead.");
+  await page.getByRole("button", { name: "Send for review", exact: true }).click();
+  await expect(page.locator(".portal-error")).toContainText("Your earlier request is already saved");
+  await expect(request).toHaveValue("Add an integration with our CRM instead.");
+  await expect(page.getByRole("link", { name: "Open saved request ↗" })).toHaveAttribute("href", `/dashboard?project=${state.project.id}`);
+  expect(state.project.summary).toBe("Add custom reports for our team.");
+});
+
+test("reconnects revoked repository access while keeping the customer signed in and their request", async ({ page }) => {
+  const state = await mockWorkspace(page, { empty: true });
+  await page.goto("/dashboard?start=1");
+  await page.getByLabel("GitHub repository", { exact: true }).selectOption("https://github.com/builder/private-app");
+  const request = page.getByLabel("How can we help move it forward?", { exact: true });
+  await request.fill("Add custom reports for our team.");
+  state.expireInspection = true;
+  await page.getByRole("button", { name: "Send for review", exact: true }).click();
+  await expect(page.locator(".simple-project-form").getByRole("alert")).toContainText("GitHub connection expired");
+  await expect(page.getByRole("link", { name: "Reconnect GitHub" })).toBeVisible();
+  await expect(request).toHaveValue("Add custom reports for our team.");
+  await expect(page.getByRole("heading", { name: "Your repo. Your next step." })).toBeVisible();
+  expect(state.creationCalls).toBe(0);
+  await page.route("**/v1/github/connect?flow=workspace", route => route.fulfill({ status: 302, headers: { location: "http://127.0.0.1:3130/dashboard?github=connected" } }));
+  await page.getByRole("link", { name: "Reconnect GitHub" }).click();
+  await expect(request).toHaveValue("Add custom reports for our team.");
+  await expect(page.getByLabel("GitHub repository", { exact: true })).toHaveValue("https://github.com/builder/private-app");
+  await page.getByRole("button", { name: "Send for review", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "We’re reviewing your next step." })).toBeVisible();
+});
+
+test("keeps repository selection and pasted links mutually exclusive and focuses missing input", async ({ page }) => {
+  const state = await mockWorkspace(page, { empty: true });
+  state.connection!.truncated = true;
+  await page.goto("/dashboard?start=1");
+  await page.getByLabel("How can we help move it forward?", { exact: true }).fill("Add custom reports for our team.");
+  await page.getByRole("button", { name: "Send for review", exact: true }).click();
+  const link = page.getByLabel("GitHub repository link", { exact: true });
+  await expect(link).toBeFocused();
+  await expect(link).toHaveAttribute("aria-describedby", "repository-choice-error");
+  await link.fill("https://github.com/builder/another-app");
+  await page.getByText("Repository not listed?", { exact: true }).click();
+  const repository = page.getByLabel("GitHub repository", { exact: true });
+  await repository.selectOption("https://github.com/builder/private-app");
+  await expect(link).toHaveValue("");
+  const inspection = page.waitForRequest(request => request.url().endsWith("/v1/github/inspect") && request.method() === "POST");
+  await page.getByRole("button", { name: "Send for review", exact: true }).click();
+  expect((await inspection).postDataJSON()).toEqual({ repositoryUrl: "https://github.com/builder/private-app" });
+  await expect(page.getByRole("heading", { name: "We’re reviewing your next step." })).toBeVisible();
+});
+
+test("handles missing repositories and a failed connection refresh", async ({ page }) => {
+  const state = await mockWorkspace(page, { empty: true });
+  state.connection!.repositories = [];
+  await page.goto("/dashboard?start=1");
+  await expect(page.getByText("No repositories shared yet.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send for review", exact: true })).toBeDisabled();
+  await expect(page.getByRole("link", { name: "Choose repositories in GitHub ↗" })).toHaveAttribute("href", state.connection!.installUrl!);
+  state.connection!.connectionError = "GitHub connection expired.";
+  await page.getByRole("button", { name: "Refresh repositories" }).click();
+  await expect(page.locator(".simple-project-form").getByRole("alert")).toContainText("GitHub connection expired");
+  await expect(page.getByRole("link", { name: "Reconnect GitHub" })).toHaveAttribute("href", "http://localhost:3121/v1/github/connect?flow=workspace");
+  state.connection!.connectionError = null;
+  state.connection!.repositories = [{ name: "builder/private-app", url: "https://github.com/builder/private-app", private: true }];
+  await page.getByRole("button", { name: "Refresh repositories" }).click();
+  await expect(page.getByLabel("GitHub repository", { exact: true })).toBeEnabled();
+  await expect(page.locator(".simple-project-form").getByRole("alert")).toHaveCount(0);
+});
+
 test("links a private repository, preserves a failed PRD save, then shows the reviewed proposal", async ({
   page,
 }, testInfo) => {

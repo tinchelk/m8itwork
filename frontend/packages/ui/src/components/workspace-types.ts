@@ -125,6 +125,7 @@ export class WorkspaceError extends Error {
   constructor(
     message: string,
     public status: number,
+    public code?: string,
   ) {
     super(message);
   }
@@ -150,12 +151,13 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
       0,
     );
   }
-  const data = (await response.json()) as T & { error?: { message?: string } };
+  const data = (await response.json()) as T & { error?: { message?: string; code?: string } };
   if (!response.ok)
     throw new WorkspaceError(
       data.error?.message ??
         "We couldn't complete this request. Please try again.",
       response.status,
+      data.error?.code,
     );
   return data;
 }

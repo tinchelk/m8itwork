@@ -1160,3 +1160,16 @@
     padding: 30px;
   }
 }
+.simple-project-form { display: grid; max-width: 780px; gap: 24px; }
+.simple-project-form label { margin: 0; }
+.project-repository-step > .button { justify-self: start; }
+.project-repository-step { display: grid; gap: 14px; }
+.project-repository-step p { margin: 0; }
+.simple-project-form .portal-kicker { margin-bottom: 6px; font-size: 12px; }
+.project-repository-actions { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; font-size: 14px; }
+.project-repository-actions a { text-decoration: underline; text-underline-offset: 3px; }
+.simple-project-form > .button { justify-self: start; }
+.simple-project-form .project-submit-note { font-size: 13px; line-height: 1.6; margin: 0; }
+.project-submit-note a { text-decoration: underline; text-underline-offset: 3px; }
+.simple-intake-start { align-self: start; }
+.simple-intake-start .button { margin-top: 18px; }

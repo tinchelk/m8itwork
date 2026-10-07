@@ -102,22 +102,38 @@ test("lets an existing customer link Google while preserving the account", async
   await expect(page.getByRole("status")).toContainText("If an account exists");
 });
 
-test("submits a demo-first customer project for review without GitHub", async ({ page }) => {
+test("preserves website start intent through email sign-in", async ({ page }) => {
+  const state = await mockWorkspace(page, { empty: true, signedOut: true });
+  await page.route("**/v1/auth/login", route => { state.signedOut = false; return route.fulfill({ json: { signedIn: true } }); });
+  await page.goto("/dashboard?start=1");
+  await page.getByLabel("Email address", { exact: true }).fill("builder@example.invalid");
+  await page.getByLabel("Password", { exact: true }).fill("fixture-only-long-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Your repo. Your next step." })).toBeVisible();
+});
+
+test("resumes an email customer's request after connecting GitHub without restoring another account's draft", async ({ page }) => {
   const state = await mockWorkspace(page, { empty: true, emailOnly: true });
-  await page.goto("/dashboard");
-  await page.getByRole("button", { name: "Start a project", exact: true }).click();
-  await page.getByLabel("Project name", { exact: true }).fill("Demo-first app");
-  await page.getByLabel("Contact email").fill("builder@example.invalid");
-  await page.getByLabel("Started with").selectOption("Lovable");
-  await page.getByLabel(/Demo link/).fill("https://example.invalid/demo");
-  await page.getByLabel("What would you like to fix or add?").fill("Add an export workflow to the current demo.");
-  await page.getByRole("checkbox", { name: /authorized to share/ }).check();
-  await page.getByRole("button", { name: "Start project", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Submit for review" })).toBeEnabled();
-  await page.getByRole("button", { name: "Submit for review" }).click();
+  await page.goto("/dashboard?start=1");
+  await expect(page.getByRole("link", { name: "Connect GitHub", exact: true })).toBeVisible();
+  const request = page.getByLabel("How can we help move it forward?", { exact: false });
+  await request.fill("Add an export workflow to the current app.");
+  await expect(page.getByRole("button", { name: "Send for review", exact: true })).toBeDisabled();
+  await page.route("**/v1/github/connect?flow=workspace", route => route.fulfill({ status: 302, headers: { location: "http://127.0.0.1:3130/dashboard?github=connected" } }));
+  state.connection!.githubLogin = "builder";
+  await page.getByRole("link", { name: "Connect GitHub", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Your repo. Your next step." })).toBeVisible();
+  await expect(request).toHaveValue("Add an export workflow to the current app.");
+  state.accountId = "different-customer";
+  await page.goto("/dashboard?start=1");
+  await expect(request).toHaveValue("");
+  state.accountId = "customer";
+  await page.goto("/dashboard?start=1");
+  await expect(request).toHaveValue("Add an export workflow to the current app.");
+  await page.getByLabel("GitHub repository", { exact: true }).selectOption("https://github.com/builder/private-app");
+  await page.getByRole("button", { name: "Send for review", exact: true }).click();
   await expect(page.getByRole("heading", { name: "We’re reviewing your next step." })).toBeVisible();
-  expect(state.project.repositoryUrl).toBeNull();
-  expect(state.project.stage).toBe("IN_REVIEW");
+  expect(state.project.contactEmail).toBe("builder@example.invalid");
 });
 
 test("shows Google link recovery and success on Account settings", async ({ page }) => {

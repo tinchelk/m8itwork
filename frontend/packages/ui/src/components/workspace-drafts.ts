@@ -3,6 +3,35 @@ import { useEffect, type RefObject } from "react";
 
 const PREFIX = "m8-workspace-draft:";
 const TTL = 60 * 60 * 1000;
+const CONNECT_RETURN = "m8-new-project-return:";
+const START_RETURN = "m8-start-after-signin";
+
+export function markStartProjectIntent() {
+  try { sessionStorage.setItem(START_RETURN, String(Date.now() + TTL)); } catch { /* Optional storage. */ }
+}
+
+export function consumeStartProjectIntent() {
+  try {
+    const expires = Number(sessionStorage.getItem(START_RETURN));
+    sessionStorage.removeItem(START_RETURN);
+    return expires > Date.now();
+  } catch { return false; }
+}
+
+export function markNewProjectReturn(accountId: string) {
+  try {
+    sessionStorage.setItem(`${CONNECT_RETURN}${accountId}`, String(Date.now() + TTL));
+  } catch { /* Optional storage. */ }
+}
+
+export function consumeNewProjectReturn(accountId: string) {
+  try {
+    const key = `${CONNECT_RETURN}${accountId}`;
+    const expires = Number(sessionStorage.getItem(key));
+    sessionStorage.removeItem(key);
+    return expires > Date.now();
+  } catch { return false; }
+}
 
 // Per-tab, short-lived drafts. Keys include the authenticated account and
 // project; acknowledgment checkboxes are never saved or restored.
@@ -10,6 +39,7 @@ export function useFormDraft(
   ref: RefObject<HTMLFormElement | null>,
   accountId: string,
   formId: string,
+  restoreVersion: unknown = null,
 ) {
   const key = `${PREFIX}${accountId}:${formId}`;
   function capture() {
@@ -70,12 +100,13 @@ export function useFormDraft(
     } catch {
       /* Invalid or unavailable drafts are ignored. */
     }
-  }, [key, ref]);
+  }, [key, ref, restoreVersion]);
   return { capture, clear };
 }
 
 export function clearAccountDrafts(accountId: string) {
   try {
+    sessionStorage.removeItem(`${CONNECT_RETURN}${accountId}`);
     for (const key of Object.keys(sessionStorage)) {
       if (key.startsWith(`${PREFIX}${accountId}:`))
         sessionStorage.removeItem(key);

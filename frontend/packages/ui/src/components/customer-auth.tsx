@@ -71,7 +71,7 @@ export function CustomerAuthPanel({ initialMode = "login", config }: { initialMo
   return <section className="portal-card portal-signin customer-auth" aria-labelledby="auth-title">
     <p className="portal-kicker">YOUR M8ITWORK ACCOUNT</p>
     <h2 id="auth-title">{titles[mode]}</h2>
-    <p>{mode === "signup" ? "Create your account first. Share a demo or connect your repository when you’re ready." : mode === "login" ? "Sign in to your dashboard. GitHub is optional." : mode === "forgot" ? "We’ll email you a link to choose a new password." : mode === "verify" ? "Use the confirmation link from your account email." : "Use at least 12 characters. Your other sessions will be signed out."}</p>
+    <p>{mode === "signup" ? "Create your account, then connect GitHub and tell us what you want next." : mode === "login" ? "Sign in with email, Google, or GitHub. Connect a repository when starting a project." : mode === "forgot" ? "We’ll email you a link to choose a new password." : mode === "verify" ? "Use the confirmation link from your account email." : "Use at least 12 characters. Your other sessions will be signed out."}</p>
     <div ref={feedback}>{message && <p className="portal-notice" role="status">{message}</p>}{error && <p className="portal-error" role="alert">{error}</p>}</div>
     {configError && <p className="portal-error" role="alert">We couldn’t load sign-in options. <button type="button" className="portal-plain" onClick={() => window.location.reload()}>Reload</button></p>}
     {!tokenMode && mode !== "forgot" && !(mode === "signup" && message) && <>

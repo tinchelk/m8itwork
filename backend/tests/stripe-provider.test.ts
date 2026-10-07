@@ -58,6 +58,12 @@ describe("Stripe SDK adapter contract", () => {
       now.mockRestore();
     }
   });
+  it("lets Checkout collect an email when the GitHub account has none", async () => {
+    const stripe = new Stripe(env.STRIPE_SECRET_KEY);
+    const create = vi.spyOn(stripe.checkout.sessions, "create").mockResolvedValue(session);
+    await new StripeProvider(env, stripe).create({ attemptId: "attempt", projectId: "project", projectName: "private-app", label: "Deposit", amountCents: 10000, currency: "USD", email: "" });
+    expect(create.mock.calls[0]![0]).not.toHaveProperty("customer_email");
+  });
   it("reads authoritative disputes with paid Checkout and includes a snapshot fence", async () => {
     const stripe = new Stripe(env.STRIPE_SECRET_KEY);
     vi.spyOn(stripe.checkout.sessions, "retrieve").mockResolvedValue({

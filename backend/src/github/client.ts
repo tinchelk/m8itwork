@@ -88,7 +88,7 @@ async function boundedJson(
         throw new AppError(
           422,
           "REPOSITORY_TOO_LARGE",
-          "This repository exceeds the pilot inspection limit. You can still send a brief for a manual review.",
+          "This repository exceeds the current inspection limit. Contact hello@m8itwork.com so we can arrange a review.",
         );
       parts.push(next.value);
     }
@@ -117,7 +117,7 @@ export class GitHubClient {
       throw new AppError(
         502,
         "GITHUB_UNAVAILABLE",
-        "We couldn't reach GitHub. Try again or send your brief without a repository.",
+        "We couldn't reach GitHub. Please try again; your request is still here.",
       );
     }
     if (response.status === 401)
@@ -136,13 +136,13 @@ export class GitHubClient {
       throw new AppError(
         429,
         "GITHUB_LIMIT",
-        "GitHub has temporarily limited access. Try again later or send your brief for a manual review.",
+        "GitHub has temporarily limited access. Please try again later; your request is still here.",
       );
     if (response.status === 409)
       throw new AppError(
         422,
         "EMPTY_REPOSITORY",
-        "This repository has no code yet. Send a demo or brief so we can review your app manually.",
+        "This repository has no code yet. Choose the repository containing your app, or contact hello@m8itwork.com for help.",
       );
     if (!response.ok)
       throw new AppError(

@@ -359,7 +359,7 @@ export async function buildApp(
         throw new AppError(
           503,
           "GITHUB_NOT_CONFIGURED",
-          "Private GitHub connections aren't configured yet. Use a public repository link or send your brief.",
+          "GitHub connection is being set up. Please try again later or contact hello@m8itwork.com.",
         );
       const details = z
         .object({

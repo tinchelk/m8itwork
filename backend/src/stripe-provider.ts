@@ -101,7 +101,7 @@ export class StripeProvider implements PaymentProvider {
         mode: "payment",
         ui_mode: "hosted_page",
         allowed_payment_method_types: ["card"],
-        customer_email: input.email,
+        ...(input.email ? { customer_email: input.email } : {}),
         adaptive_pricing: { enabled: false },
         allow_promotion_codes: false,
         client_reference_id: input.projectId,

@@ -1,8 +1,8 @@
 "use client";
-import { useRef, useState, type FormEvent } from "react";
-import type { Project } from "./workspace-types";
-import { stageLabels } from "./workspace-types";
-import { useFormDraft } from "./workspace-drafts";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import type { Connection, Inventory, Project } from "./workspace-types";
+import { API, api, stageLabels, WorkspaceError } from "./workspace-types";
+import { markNewProjectReturn, useFormDraft } from "./workspace-drafts";
 
 export type Save = (
   path: string,
@@ -13,133 +13,150 @@ const data = (event: FormEvent<HTMLFormElement>) =>
   Object.fromEntries(new FormData(event.currentTarget));
 
 export function NewProjectForm({
-  accountId,
-  save,
-  busy,
+  accountId, save, busy, setWorking, onError,
 }: {
   accountId: string;
   save: Save;
   busy: boolean;
+  setWorking: (working: boolean) => void;
+  onError: (error: unknown) => void;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
-  const draft = useFormDraft(formRef, accountId, "new-project");
+  const [connection, setConnection] = useState<Connection | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const draft = useFormDraft(formRef, accountId, "new-project-v2", connection);
+  useEffect(() => {
+    let ignore = false;
+    void api<Connection>("/v1/session").then(result => {
+      if (!ignore) {
+        setConnection(result);
+        setConnectionError(result.connectionError);
+      }
+    }).catch(error => {
+      if (!ignore) setConnectionError(error.message);
+    }).finally(() => { if (!ignore) setLoading(false); });
+    return () => { ignore = true; };
+  }, [accountId]);
+
+  async function refreshRepositories() {
+    draft.capture();
+    setLoading(true);
+    setConnectionError(null);
+    try {
+      const result = await api<Connection>("/v1/session");
+      setConnection(result);
+      setConnectionError(result.connectionError);
+    } catch (error) {
+      setConnectionError((error as Error).message);
+    } finally { setLoading(false); }
+  }
+  function connect() {
+    draft.capture();
+    markNewProjectReturn(accountId);
+  }
+  const connected = Boolean(connection?.githubLogin);
+  const ready = connected && !connectionError && !loading;
   return (
     <form
       ref={formRef}
       onInput={draft.capture}
       onChange={draft.capture}
-      className="portal-form"
-      onSubmit={async (event) => {
+      className="portal-form simple-project-form"
+      onSubmit={async event => {
         event.preventDefault();
         const form = event.currentTarget;
-        const idField = form.elements.namedItem(
-          "draftRequestId",
-        ) as HTMLInputElement;
+        const values = data(event);
+        const repositoryUrl = String(values.repositoryUrl || values.repositoryLink || "").trim();
+        if (!ready) return;
+        if (!repositoryUrl) {
+          setFormError("Choose a repository or paste its GitHub link.");
+          const link = form.elements.namedItem("repositoryLink") as HTMLInputElement | null;
+          const details = link?.closest("details");
+          if (details) details.open = true;
+          link?.focus();
+          return;
+        }
+        setFormError(null);
+        const idField = form.elements.namedItem("draftRequestId") as HTMLInputElement;
         idField.value ||= crypto.randomUUID();
         draft.capture();
-        const { draftRequestId, ...values } = data(event);
-        if (
-          await save(
-            "/v1/projects",
-            {
-              ...values,
-              id: draftRequestId,
-              consent: values.consent === "on",
-            },
-            "Project started.",
-          )
-        ) {
-          form.reset();
-          draft.clear();
+        setChecking(true);
+        setWorking(true);
+        try {
+          const report = await api<Inventory & { id: string }>("/v1/github/inspect", { repositoryUrl });
+          setChecking(false);
+          if (await save("/v1/projects", {
+            id: idField.value,
+            inspectionId: report.id,
+            summary: values.summary,
+            consent: true,
+          }, "Request sent. We’ll review your repository and what you want next.")) {
+            draft.clear();
+          } else await refreshRepositories();
+        } catch (error) {
+          if (error instanceof WorkspaceError && error.code === "GITHUB_RECONNECT")
+            setConnectionError(error.message);
+          else onError(error);
+        } finally {
+          setChecking(false);
+          setWorking(false);
         }
       }}
     >
       <input type="hidden" name="draftRequestId" />
-      <label>
-        Project name
-        <input
-          name="name"
-          required
-          maxLength={120}
-          placeholder="Your app’s name"
-        />
-      </label>
-      <div className="portal-form-row">
-        <label>
-          Contact email
-          <input
-            name="contactEmail"
-            type="email"
-            required
-            autoComplete="email"
-            maxLength={254}
-          />
-        </label>
-        <label>
-          Started with
-          <select name="platform" required defaultValue="">
-            <option value="" disabled>
-              Choose a tool
-            </option>
-            {["Lovable", "Base44", "Bolt", "Replit", "Other"].map((v) => (
-              <option key={v}>{v}</option>
-            ))}
+      <div className="project-repository-step">
+        <p className="portal-kicker">01 / YOUR REPOSITORY</p>
+        {loading ? <p className="portal-muted" role="status">Loading GitHub connection…</p> : null}
+        {connected ? (
+          <p className="portal-muted">Connected as <strong>@{connection!.githubLogin}</strong></p>
+        ) : null}
+        {!loading && (!connected || connectionError) ? (
+          connection?.connectEnabled ? <a className="button outline" href={`${API}/v1/github/connect?flow=workspace`} onClick={connect}>
+            {connected ? "Reconnect GitHub" : "Connect GitHub"} <span aria-hidden="true">↗</span>
+          </a> : connection ? <p className="portal-notice">GitHub connection is being set up. Please try again later.</p> : null
+        ) : null}
+        {!connected ? <p className="portal-muted">Read-only access. You choose which repositories to share.</p> : null}
+        {connectionError ? <p className="portal-error" role="alert">{connectionError}</p> : null}
+        {connected && !loading && !connection!.repositories.length && !connectionError ? <p className="portal-notice">No repositories shared yet. Choose your app in GitHub, then refresh below.</p> : null}
+        <div>
+          <label htmlFor="project-repository">GitHub repository</label>
+          <select id="project-repository" name="repositoryUrl" defaultValue="" required={!connection?.truncated} disabled={busy || !ready || !connection?.repositories.length} onChange={event => {
+            const link = event.currentTarget.form?.elements.namedItem("repositoryLink") as HTMLInputElement | null;
+            if (link) link.value = "";
+            setFormError(null);
+          }}>
+            <option value="">Choose a repository</option>
+            {connection?.repositories.map(repo => <option key={repo.name} value={repo.url}>{repo.name}{repo.private ? " · private" : ""}</option>)}
           </select>
-        </label>
+        </div>
+        {connected ? <div className="project-repository-actions">
+          {connection?.installUrl ? <a href={connection.installUrl} target="_blank" rel="noopener noreferrer" onClick={draft.capture}>Choose repositories in GitHub ↗</a> : null}
+          <button type="button" className="portal-plain" disabled={busy || loading} onClick={() => void refreshRepositories()}>Refresh repositories</button>
+        </div> : !loading ? <button type="button" className="portal-plain" disabled={busy} onClick={() => void refreshRepositories()}>Retry connection status</button> : null}
+        {connection?.truncated ? <details>
+          <summary>Repository not listed?</summary>
+          <label>GitHub repository link<input name="repositoryLink" type="url" maxLength={500} placeholder="https://github.com/you/your-app" disabled={busy || !ready} aria-invalid={Boolean(formError)} aria-describedby={formError ? "repository-choice-error" : undefined} onChange={event => {
+            const select = event.currentTarget.form?.elements.namedItem("repositoryUrl") as HTMLSelectElement | null;
+            if (select && event.currentTarget.value.trim()) select.value = "";
+            setFormError(null);
+          }} /></label>
+          <p className="portal-muted">Only repositories shared with the App can be read.</p>
+        </details> : null}
       </div>
-      <label>
-        What would you like to fix or add?
-        <textarea
-          name="summary"
-          required
-          minLength={20}
-          maxLength={5000}
-          rows={4}
-          placeholder="What you’ve built, what gets in the way, and what you want next."
-        />
-      </label>
-      <label>
-        Demo link <span className="portal-muted">(optional)</span>
-        <input
-          name="demoUrl"
-          type="url"
-          maxLength={500}
-          placeholder="https://"
-        />
-      </label>
-      <details>
-        <summary>Review without connecting GitHub</summary>
-        <label>
-          Tell us about access constraints
-          <textarea
-            name="accessNote"
-            maxLength={1000}
-            rows={3}
-            placeholder="For example, your code is still inside the app builder."
-          />
-        </label>
-        <p className="portal-muted">
-          We’ll review the available access before scoping the work.
-        </p>
-      </details>
-      <label className="portal-check">
-        <input type="checkbox" name="consent" required />
-        <span>
-          I’m authorized to share this project and agree to the{" "}
-          <a href="/privacy" target="_blank" rel="noopener noreferrer">
-            privacy & access terms (opens in a new tab)
-          </a>
-          .
-        </span>
-      </label>
-      <p className="portal-muted">
-        Leave out passwords, API keys, and customer data. Starting a project is
-        free; any paid work is agreed separately.
-      </p>
-      <button className="button" disabled={busy}>
-        {busy ? "Saving…" : "Start project"}
-        <span aria-hidden="true">↗</span>
+      <div>
+        <p className="portal-kicker">02 / WHAT’S NEXT</p>
+        <label htmlFor="project-request">How can we help move it forward?</label>
+        <textarea id="project-request" name="summary" required minLength={10} maxLength={5000} rows={5} disabled={busy}
+          placeholder="What do you want to fix, add, or improve? Tell us in your own words." />
+      </div>
+      {formError ? <p id="repository-choice-error" role="alert" className="portal-error">{formError}</p> : null}
+      <button className="button" disabled={busy || !ready || !connection?.repositories.length && !connection?.truncated}>
+        {checking ? "Checking repository…" : busy ? "Sending…" : "Send for review"} <span aria-hidden="true">↗</span>
       </button>
+      <p className="portal-muted project-submit-note">By sending, you authorize a read-only review under our <a href="/privacy" target="_blank" rel="noopener noreferrer">privacy & access terms</a>. Any paid work is agreed separately.</p>
     </form>
   );
 }

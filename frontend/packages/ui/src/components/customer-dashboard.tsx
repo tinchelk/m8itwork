@@ -96,7 +96,7 @@ export function CustomerDashboard({
             Your plan, conversations, and progress will live here.
           </p>
           <ol className="portal-login-steps">
-            <li><b>01</b><div><strong>Share your app</strong><span>Your demo, ideas, and requirements. Connect GitHub when ready.</span></div></li>
+            <li><b>01</b><div><strong>Share your app</strong><span>Connect your repository and tell us what you want to fix, add, or improve.</span></div></li>
             <li><b>02</b><div><strong>Review & agree</strong><span>Our review, scoped work, estimated delivery, and cost.</span></div></li>
             <li><b>03</b><div><strong>Build & follow</strong><span>Messages, payments, progress, and verified handover.</span></div></li>
           </ol>

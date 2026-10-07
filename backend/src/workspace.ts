@@ -14,6 +14,7 @@ import { registerPayments } from "./payments.js";
 import type { PaymentProvider } from "./stripe-provider.js";
 import { isAppOrigin, type Env } from "./config.js";
 import { AppError } from "./shared/errors.js";
+import { accountFromRequest } from "./accounts.js";
 
 const reference = z
   .union([
@@ -197,7 +198,7 @@ export async function registerWorkspace(
   }
   app.post("/v1/projects", async (request, reply) => {
     const account = await actor(request);
-    const input = z
+    const legacyInput = z
       .object({
         id: z.uuid(),
         name: z.string().trim().min(1).max(120),
@@ -208,8 +209,73 @@ export async function registerWorkspace(
         accessNote: z.string().trim().max(1000).optional(),
         consent: z.literal(true),
       })
-      .strict()
-      .parse(request.body);
+      .strict();
+    const input = z.union([
+      z.object({
+        id: z.uuid(),
+        inspectionId: z.uuid(),
+        summary: z.string().trim().min(10).max(5000),
+        consent: z.literal(true),
+      }).strict(),
+      legacyInput,
+    ]).parse(request.body);
+    if ("inspectionId" in input) {
+      const current = await session(request, reply);
+      const project = await prisma.$transaction(async transaction => {
+        // One request ID creates one project, including concurrent retries.
+        await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.id}, 0))::text`;
+        const active = await accountFromRequest(transaction, request);
+        if (active?.id !== account.id)
+          throw new AppError(401, "SIGN_IN_REQUIRED", "Sign in again to send your request. Your input is still here.");
+        const existing = await transaction.project.findUnique({ where: { id: input.id } });
+        if (existing && existing.accountId !== account.id) throw unavailable();
+        const inspection = await transaction.inspection.findFirst({
+          where: { id: input.inspectionId, sessionId: current.id, accountId: account.id },
+        });
+        if (!inspection)
+          throw new AppError(400, "INSPECTION_UNAVAILABLE", "Check this repository in your current browser before sending it.");
+        const report = z.object({ url: z.url(), repository: z.string(), commit: z.string() }).passthrough().parse(inspection.report);
+        if (existing) {
+          if (existing.summary !== input.summary || existing.repositoryUrl !== report.url)
+            throw new AppError(409, "REQUEST_ALREADY_SAVED", "Your earlier request is already saved. Open it to add these changes in the conversation. Your edited input is still here.");
+          return existing;
+        }
+        if (!current.githubLogin || !current.tokenEncrypted || !current.tokenExpiresAt || current.tokenExpiresAt <= new Date())
+          throw new AppError(400, "GITHUB_CONNECTION_REQUIRED", "Reconnect GitHub, then send your request. Your input is still here.");
+        const locked = await transaction.reviewSession.updateMany({
+          where: {
+            id: current.id,
+            accountSessionId: current.accountSessionId,
+            expiresAt: { gt: new Date() },
+            tokenEncrypted: current.tokenEncrypted,
+            tokenExpiresAt: { gt: new Date() },
+            selectedInspectionId: input.inspectionId,
+          },
+          data: { selectedInspectionId: null },
+        });
+        if (locked.count !== 1)
+          throw new AppError(409, "CONNECTION_CHANGED", "Your GitHub connection or repository selection changed. Refresh repositories and try again.");
+        return transaction.project.create({
+          data: {
+            id: input.id,
+            accountId: account.id,
+            name: report.repository.split("/").at(-1)!.slice(0, 120),
+            contactEmail: active.email ?? "",
+            platform: "GitHub",
+            summary: input.summary,
+            repositoryUrl: report.url,
+            inspectionReport: inspection.report ?? Prisma.JsonNull,
+            stage: "IN_REVIEW",
+            updates: { create: {
+              author: "CUSTOMER",
+              title: "Request sent for review",
+              detail: `${report.repository} shared for read-only review. We’ll review the request before proposing scope, delivery, and cost.`,
+            } },
+          },
+        });
+      });
+      return reply.code(201).send({ id: project.id });
+    }
     const project = await prisma.project.upsert({
       where: { id: input.id },
       update: {},

@@ -21,7 +21,7 @@ import {
   requestedPayment,
 } from "./project-payments";
 import { ProjectDelivery, TeamNotes } from "./project-delivery";
-import { clearAccountDrafts } from "./workspace-drafts";
+import { clearAccountDrafts, consumeNewProjectReturn, consumeStartProjectIntent, markStartProjectIntent } from "./workspace-drafts";
 import {
   API,
   ADMIN_ORIGIN,
@@ -82,6 +82,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [loadingProject, setLoadingProject] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedRequestId, setSavedRequestId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [paymentReturn, setPaymentReturn] = useState<
     "returned" | "cancelled" | null
@@ -93,7 +94,8 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
   const duePayment = project ? requestedPayment(project) : undefined;
 
   const failure = useCallback((reason: unknown) => {
-    if (reason instanceof WorkspaceError && reason.status === 401) {
+    if (!(reason instanceof WorkspaceError && reason.code === "REQUEST_ALREADY_SAVED")) setSavedRequestId(null);
+    if (reason instanceof WorkspaceError && reason.status === 401 && reason.code !== "GITHUB_RECONNECT") {
       sequence.current++;
       setAuth((value) => (value ? { ...value, account: null } : value));
       setProject(null);
@@ -126,6 +128,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
     if (id) url.searchParams.set("project", id);
     else url.searchParams.delete("project");
     url.searchParams.delete("view");
+    url.searchParams.delete("start");
     window.history.replaceState(null, "", url.pathname + url.search);
   }
   async function selectProject(id: string, teamView = team) {
@@ -173,6 +176,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
         if (ignore || requestSequence.current !== initialSequence) return;
         setAuth(result);
         const params = new URLSearchParams(window.location.search);
+        if (!admin && params.get("start") === "1") markStartProjectIntent();
         if (params.get("github") === "error")
           setError("GitHub authorization wasn’t completed. Please try again.");
         if (params.get("github") === "identity")
@@ -190,6 +194,13 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
         if (ignore || requestSequence.current !== initialSequence) return;
         setProjects(list.projects);
         setListLoaded(true);
+        const startAfterSignin = !teamView && consumeStartProjectIntent();
+        if (!teamView && (startAfterSignin || params.get("start") === "1" || (params.has("github") && consumeNewProjectReturn(result.account.id)))) {
+          setCreating(true);
+          remember(null);
+          requestAnimationFrame(() => contentTitle.current?.focus());
+          return;
+        }
         const selected = params.get("project");
         const first = list.projects.find((item) => item.id === selected);
         if (first) {
@@ -232,6 +243,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
   const save: Save = async (path, data, message) => {
     setBusy(true);
     setError(null);
+    setSavedRequestId(null);
     setNotice(null);
     try {
       const result = await api<{ id?: string }>(path, data);
@@ -250,6 +262,8 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
       }
       return true;
     } catch (reason) {
+      if (reason instanceof WorkspaceError && reason.code === "REQUEST_ALREADY_SAVED" && path === "/v1/projects" && typeof data === "object" && data !== null && "id" in data && typeof data.id === "string")
+        setSavedRequestId(data.id);
       failure(reason);
       return false;
     } finally {
@@ -416,6 +430,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
         {error && (
           <p className="portal-error" role="alert">
             {error}
+            {savedRequestId ? <a href={`/dashboard?project=${encodeURIComponent(savedRequestId)}`} target="_blank" rel="noopener noreferrer">Open saved request ↗</a> : null}
             {!auth && (
               <button
                 className="portal-plain"
@@ -452,7 +467,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                 <div>
                   <strong>Share & tell us</strong>
                   <span>
-                    Your demo, requests, and what you want next. Connect a private repo when ready.
+                    Connect GitHub and tell us what you want to fix, add, or improve.
                   </span>
                 </div>
               </li>
@@ -602,18 +617,19 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
               <p role="status">Opening project…</p>
             ) : creating ? (
               <section className="portal-card">
-                <p className="portal-kicker">FIRST, THE HEAD START</p>
+                <p className="portal-kicker">LET’S MOVE IT FORWARD</p>
                 <h1 ref={contentTitle} tabIndex={-1}>
-                  Let’s see what you’ve got.
+                  Your repo. Your next step.
                 </h1>
                 <p className="portal-lead">
-                  Start with your goals and a demo. Connect a repository when
-                  you’re ready, or tell us what access you can provide.
+                  Connect your app and tell us what you want next. We’ll review it and get back to you here.
                 </p>
                 <NewProjectForm
                   accountId={auth.account.id}
                   save={save}
                   busy={busy}
+                  setWorking={setBusy}
+                  onError={failure}
                 />
               </section>
             ) : project ? (
@@ -626,7 +642,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                     <p className="portal-muted">
                       {project.platform} · Updated{" "}
                       {displayDate(project.updatedAt)}
-                      {team ? ` · ${project.contactEmail}` : ""}
+                      {team && project.contactEmail ? ` · ${project.contactEmail}` : ""}
                     </p>
                   </div>
                   <span

@@ -71,6 +71,13 @@ export async function mockWorkspace(
     staleApproval: false,
     requestCalls: 0,
     signedOut: options.signedOut ?? false,
+    connection: null as Connection | null,
+    failInspection: false,
+    expireInspection: false,
+    failCreate: false,
+    loseCreateResponse: false,
+    creationCalls: 0,
+    inspectionCalls: 0,
   };
   const auth: Auth = {
     connectEnabled: options.configured ?? true,
@@ -96,6 +103,7 @@ export async function mockWorkspace(
     connectionError: null,
     truncated: false,
   };
+  state.connection = connection;
   await page.route("http://localhost:3121/v1/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     const method = route.request().method();
@@ -121,7 +129,7 @@ export async function mockWorkspace(
       state.signedOut = true;
       return send({ signedOut: true });
     }
-    if (path === "/v1/session") return send(connection);
+    if (path === "/v1/session") return send(state.connection);
     if (path.endsWith("/messages") && method === "GET") {
       const before = new URL(route.request().url()).searchParams.get("before");
       const end = before
@@ -175,7 +183,16 @@ export async function mockWorkspace(
       else state.project.customerReadAt = new Date().toISOString();
       return send({ read: true });
     }
-    if (path === "/v1/github/inspect")
+    if (path === "/v1/github/inspect") {
+      state.inspectionCalls++;
+      if (state.expireInspection) {
+        state.expireInspection = false;
+        return send({ error: { code: "GITHUB_RECONNECT", message: "Your GitHub connection expired. Please reconnect." } }, 401);
+      }
+      if (state.failInspection) {
+        state.failInspection = false;
+        return send({ error: { message: "Repository couldn't be checked. Please reconnect GitHub and try again." } }, 502);
+      }
       return send({
         id: "8b3f8de8-5118-4a54-8506-78372585f403",
         repository: "builder/private-app",
@@ -187,13 +204,36 @@ export async function mockWorkspace(
         complete: false,
         limitations: ["Static inventory; workflows need verification."],
       });
+    }
     if (path === "/v1/projects" && method === "POST") {
+      state.creationCalls++;
+      if (state.failCreate) {
+        state.failCreate = false;
+        return send({ error: { message: "Request wasn't saved. Please try again." } }, 503);
+      }
+      if (!state.empty && body.id === state.project.id) {
+        if (body.summary !== state.project.summary)
+          return send({ error: { code: "REQUEST_ALREADY_SAVED", message: "Your earlier request is already saved. Open it to add these changes in the conversation. Your edited input is still here." } }, 409);
+        return send({ id: state.project.id }, 201);
+      }
       state.empty = false;
       state.project = {
         ...state.project,
         ...body,
+        ...(body.inspectionId ? {
+          name: "private-app",
+          platform: "GitHub",
+          contactEmail: auth.account?.email ?? "",
+          stage: "IN_REVIEW",
+          repositoryUrl: connection.repositories[0]!.url,
+          inspectionReport: { repository: "builder/private-app", url: connection.repositories[0]!.url, commit: "a".repeat(40), branch: "main", stack: ["Next.js"], fileCount: 42, complete: false, limitations: ["Static inventory; workflows need verification."] },
+        } : {}),
         id: body.id as string,
       } as Project;
+      if (state.loseCreateResponse) {
+        state.loseCreateResponse = false;
+        return route.abort("connectionreset");
+      }
       return send({ id: state.project.id }, 201);
     }
     if (path === "/v1/projects" || path === "/v1/operator/projects") {

@@ -196,6 +196,81 @@ describe.skipIf(!dbUrl)("owned customer workspace", () => {
     assumptions:
       "Starts after access and payment are agreed. Includes only the listed acceptance checks.",
   });
+  async function inspectRepository(cookie: string) {
+    const result = await post("/v1/github/inspect", cookie, { repositoryUrl: "https://github.com/customer/private-app" });
+    expect(result.statusCode).toBe(200);
+    return result.json<{ id: string }>().id;
+  }
+  it("creates one review-queue project from only an owned repository and request, including concurrent retries", async () => {
+    const customer = await signIn();
+    const contactEmail = `${randomUUID()}@example.invalid`;
+    await prisma.account.update({ where: { id: customer.account.id }, data: { email: contactEmail, emailVerifiedAt: new Date() } });
+    const input = { id: randomUUID(), inspectionId: await inspectRepository(customer.cookie), summary: "Add dark mode", consent: true };
+    const results = await Promise.all([post("/v1/projects", customer.cookie, input), post("/v1/projects", customer.cookie, input)]);
+    expect(results.map(r => r.statusCode)).toEqual([201, 201]);
+    expect(results[0].json()).toEqual(results[1].json());
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: input.id }, include: { updates: true } });
+    expect(project).toMatchObject({ name: "private-app", contactEmail, accountId: customer.account.id, platform: "GitHub", summary: "Add dark mode", stage: "IN_REVIEW", repositoryUrl: "https://github.com/customer/private-app", demoUrl: null, accessNote: null });
+    expect(project.updates).toHaveLength(1);
+    expect(project.inspectionReport).toMatchObject({ repository: "customer/private-app", commit: "a".repeat(40) });
+    const operator = await signIn(900001, "operator", undefined, "admin");
+    const queue = await app.inject({ url: "/v1/operator/projects", headers: { cookie: operator.cookie } });
+    expect(queue.json<{ projects: { id: string }[] }>().projects.some(p => p.id === project.id)).toBe(true);
+    const visible = await app.inject({ url: `/v1/operator/projects/${project.id}`, headers: { cookie: operator.cookie } });
+    expect(visible.json()).toMatchObject({ summary: input.summary, repositoryUrl: project.repositoryUrl, stage: "IN_REVIEW" });
+  });
+  it("preserves the saved request and rejects edited retries after an uncertain response", async () => {
+    const customer = await signIn();
+    const input = { id: randomUUID(), inspectionId: await inspectRepository(customer.cookie), summary: "Add useful reports to this app.", consent: true };
+    expect((await post("/v1/projects", customer.cookie, input)).statusCode).toBe(201);
+    input.inspectionId = await inspectRepository(customer.cookie);
+    const changed = await post("/v1/projects", customer.cookie, { ...input, summary: "Add another feature instead of the original request." });
+    expect(changed.statusCode).toBe(409);
+    expect(changed.json()).toMatchObject({ error: { code: "REQUEST_ALREADY_SAVED" } });
+    expect((await post("/v1/projects", customer.cookie, input)).statusCode).toBe(201);
+    input.inspectionId = await inspectRepository(customer.cookie);
+    const inspection = await prisma.inspection.findUniqueOrThrow({ where: { id: input.inspectionId } });
+    await prisma.inspection.update({ where: { id: input.inspectionId }, data: { report: { ...(inspection.report as object), repository: "customer/another-app", url: "https://github.com/customer/another-app" } } });
+    expect((await post("/v1/projects", customer.cookie, input)).statusCode).toBe(409);
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: input.id }, include: { updates: true } });
+    expect(project).toMatchObject({ summary: input.summary, repositoryUrl: "https://github.com/customer/private-app" });
+    expect(project.updates).toHaveLength(1);
+  });
+  it("does not invent a contact email for a GitHub-only request", async () => {
+    const customer = await signIn();
+    const input = { id: randomUUID(), inspectionId: await inspectRepository(customer.cookie), summary: "Add a new reporting dashboard.", consent: true };
+    expect((await post("/v1/projects", customer.cookie, input)).statusCode).toBe(201);
+    expect((await prisma.project.findUniqueOrThrow({ where: { id: input.id } })).contactEmail).toBe("");
+  });
+  it("rejects foreign inspections and request IDs without creating or revealing a project", async () => {
+    const owner = await signIn();
+    const foreign = await signIn();
+    const inspectionId = await inspectRepository(owner.cookie);
+    const input = { id: randomUUID(), inspectionId, summary: "Add useful custom reports.", consent: true };
+    expect((await post("/v1/projects", foreign.cookie, input)).statusCode).toBe(400);
+    expect(await prisma.project.findUnique({ where: { id: input.id } })).toBeNull();
+    expect((await post("/v1/projects", owner.cookie, input)).statusCode).toBe(201);
+    expect((await post("/v1/projects", foreign.cookie, input)).statusCode).toBe(404);
+    expect((await post("/v1/projects", "", { ...input, id: randomUUID() })).statusCode).toBe(401);
+  });
+  it("rejects cleared and disconnected repository selections while retaining no partial project", async () => {
+    const customer = await signIn();
+    const input = { id: randomUUID(), inspectionId: await inspectRepository(customer.cookie), summary: "Add a feature to this repository.", consent: true };
+    await post("/v1/inspection-selection/remove", customer.cookie, { inspectionId: input.inspectionId });
+    expect((await post("/v1/projects", customer.cookie, input)).statusCode).toBe(409);
+    input.inspectionId = await inspectRepository(customer.cookie);
+    await post("/v1/github/disconnect", customer.cookie, {});
+    expect((await post("/v1/projects", customer.cookie, input)).statusCode).toBe(400);
+    expect(await prisma.project.findUnique({ where: { id: input.id } })).toBeNull();
+  });
+  it("rejects expired repository access before saving a request", async () => {
+    const customer = await signIn();
+    const input = { id: randomUUID(), inspectionId: await inspectRepository(customer.cookie), summary: "Build an integration with our CRM.", consent: true };
+    const inspection = await prisma.inspection.findUniqueOrThrow({ where: { id: input.inspectionId } });
+    await prisma.reviewSession.update({ where: { id: inspection.sessionId }, data: { tokenExpiresAt: new Date(0) } });
+    expect((await post("/v1/projects", customer.cookie, input)).statusCode).toBe(400);
+    expect(await prisma.project.findUnique({ where: { id: input.id } })).toBeNull();
+  });
   it("persists stable identity across username changes and uses a separate opaque session", async () => {
     const userId = nextUserId();
     const first = await signIn(userId, "first-name");

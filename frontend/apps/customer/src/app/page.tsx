@@ -1,4 +1,3 @@
-import { Intake } from "@/components/intake";
 import { WorkshopBackdrop } from "@/components/workshop-backdrop";
 import Image from "next/image";
 
@@ -68,8 +67,7 @@ export default function Home() {
                 Show us your app <span aria-hidden="true">↗</span>
               </a>
               <p className="quiet hero-note">
-                Create an account with email or Google. Prefer a quick first look?
-                <a href="#review"> Send a demo brief.</a>
+                Connect GitHub. Tell us what you want next.
               </p>
             </div>
             <div
@@ -182,8 +180,7 @@ export default function Home() {
                   <div>
                     <h3>Show us what you’ve built.</h3>
                     <p>
-                      Create an account, share a demo and your requests,
-                      and connect a private repository when you’re ready.
+                      Connect your GitHub repository and describe what you want to fix, add, or improve.
                     </p>
                   </div>
                 </li>
@@ -228,19 +225,19 @@ export default function Home() {
               <div className="review-expect">
                 <h3>What happens next</h3>
                 <p>
-                  GitHub gives us an initial look at the code. Your demo and
-                  goals help us confirm the scope. We’ll contact you about a
-                  paid assessment before development starts.
+                  We review your repository and request, then reply in your dashboard with the next step. Scope, delivery, and cost are agreed before work starts.
                 </p>
               </div>
               <p className="quiet">
-                This quick brief doesn’t require an account. For a project
-                workspace with review and delivery updates,{" "}
-                <a href="/dashboard">open your dashboard</a>. Assessment and
-                project fees are agreed separately.
+                Read-only access to the repositories you choose. Private repositories are welcome.
               </p>
             </div>
-            <Intake />
+            <div className="intake-card simple-intake-start">
+              <p className="eyebrow">JUST TWO THINGS</p>
+              <h3>Your repository.<br />What you want next.</h3>
+              <p>Connect your app in GitHub and tell us how we can help move it forward.</p>
+              <a className="button" href="/dashboard?start=1">Let’s get started <span aria-hidden="true">↗</span></a>
+            </div>
           </section>
           <section className="faq wrap">
             <p className="eyebrow">A FEW GOOD QUESTIONS</p>
@@ -268,9 +265,7 @@ export default function Home() {
               <details>
                 <summary>Can you review a private repository?</summary>
                 <p>
-                  When the GitHub connection is enabled, you choose which
-                  repositories to share with our read-only GitHub App. You can
-                  also send your demo and arrange access during the assessment.
+                  You choose which repositories to share with our read-only GitHub App, including private repositories. We don’t change your code by connecting.
                 </p>
               </details>
               <details>
@@ -287,9 +282,7 @@ export default function Home() {
               <details>
                 <summary>What if my AI tool doesn’t export to GitHub?</summary>
                 <p>
-                  Send your demo and describe what you need. We’ll discuss the
-                  access your platform supports and whether we can help before
-                  agreeing to paid work.
+                  You’ll need a GitHub repository to start a project here. If your tool doesn’t offer an export, contact hello@m8itwork.com to discuss what’s possible.
                 </p>
               </details>
             </div>
