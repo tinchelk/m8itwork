@@ -27,3 +27,11 @@ Verification: real PostgreSQL integration checks for automatic metadata, atomic 
 All three independent gates pass. Staff Engineer independently passed 24 PostgreSQL/Stripe adapter tests and four desktop/mobile recovery checks, with no blocking code findings. Product Owner accepts the flow for this milestone. Product Designer accepts desktop/mobile layout, input/error focus, and repo-choice clarity with no remaining findings. No new findings are consciously deferred. Existing live-provider, second-customer and Stripe acceptance gates remain separate; no live customer request or payment was created by these fixture checks.
 
 `preview-simple-project-desktop.png` and `preview-simple-project-mobile.png` are synthetic browser-test evidence. They contain fixture accounts and repositories, not actual customer data. Deployment uses source archived from the milestone commit and coordinates API, customer and backoffice revisions. No schema migration is required; rollback uses the prior compatible application revisions.
+
+## Production verification
+
+Implementation checkpoint `84fdfd0dcd542482122d45eab52a724275bf5ac3` passed GitHub CI run `37566042281`. Its archived source deployed successfully to the API (`e64cc4fa-6fd6-4050-98bd-8e8fdb15cf0d`), customer (`1d1ef2fe-b0c4-4ced-b7ad-20d98ee1e5b3`) and admin (`221b2aac-e7a8-4195-925d-31461702713c`) Railway services. Public HTTPS pages and API health pass; signed-out customer/operator endpoints return 401 and a foreign-origin write returns 403.
+
+The authenticated production dashboard visibly shows only GitHub repository and the request textarea; the website links to `/dashboard?start=1`. No real project was submitted for this read-only check. The live screenshot remains ignored under `backend/var/preview-production-simple-intake.png`.
+
+A final scoped stylesheet correction gives Connect/Reconnect GitHub readable light text over its teal background. The designer re-review passes at 8.72:1 normal and 6.60:1 hover contrast, preserving focus styling. Frontend lint, types, both builds and six affected desktop/mobile connection-recovery checks pass after this correction. The final frontend release revision is recorded in the release handoff; backend source is unchanged from `84fdfd0`.

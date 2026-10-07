@@ -1163,6 +1163,7 @@
 .simple-project-form { display: grid; max-width: 780px; gap: 24px; }
 .simple-project-form label { margin: 0; }
 .project-repository-step > .button { justify-self: start; }
+.simple-project-form .button.outline { color: #e4f8f2; }
 .project-repository-step { display: grid; gap: 14px; }
 .project-repository-step p { margin: 0; }
 .simple-project-form .portal-kicker { margin-bottom: 6px; font-size: 12px; }
