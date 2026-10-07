@@ -59,3 +59,8 @@ test("Docker stop cancels an active provider and exits gracefully", async t => {
   assert.match(ok(docker("logs", name)), /Active provider process stopped cleanly/);
   ok(docker("rm", name));
 });
+test("remote Codex reconnect relays only the device prompt and handles cancellation/failure", t => {
+  for (const mode of ["reconnect-success", "reconnect-cancel", "reconnect-failed"]) {
+    const output = ok(fixture(volume(t), mode)); assert.match(output, /Remote reconnect lifecycle passed/); assert.ok(!output.includes("fabricated-auth-credential")); assert.ok(!output.includes("ABCD-EF123"));
+  }
+});

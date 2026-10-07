@@ -181,4 +181,74 @@ describe.skipIf(!dbUrl)("private local review queue", () => {
     expect(new Set([...first.json().jobs, ...second.json().jobs].map((j: { id: string }) => j.id)).size).toBe(12);
     expect((await app.inject({ url: `/v1/operator/projects/${another.id}/review-jobs?cursor=${first.json().nextCursor}`, headers: { cookie: operator.cookie } })).statusCode).toBe(404);
   });
+  it("reconnect is operator-only, capability checked, idempotent and excludes concurrent reviews", async () => {
+    const w = await pair(), requestId = randomUUID(), route = `/v1/operator/review-workers/${w.worker.id}/login`;
+    expect((await post(route, customer.cookie, { requestId })).statusCode).toBe(403);
+    expect((await post(route, operator.cookie, { requestId })).json().error.code).toBe("WORKER_UPGRADE");
+    await workerPost("/status", w.token, { remoteLogin: true, providers: [{ provider: "codex", state: "NEEDS_LOGIN" }] });
+    const starts = await Promise.all([1, 2].map(() => post(route, operator.cookie, { requestId })));
+    expect(starts.map(r => r.json<{ login: { id: string } }>().login.id)).toEqual([requestId, requestId]);
+    expect((await post(route, operator.cookie, { requestId: randomUUID() })).json().login.id).toBe(requestId);
+    expect((await workerPost("/claim", w.token, { attemptId: randomUUID(), providers: ["codex"] })).json().job).toBeNull();
+    const attemptId = randomUUID();
+    expect((await workerPost("/login/claim", w.token, { attemptId })).json().login.id).toBe(requestId);
+    expect((await workerPost("/login/claim", w.token, { attemptId })).json().login.id).toBe(requestId);
+    expect((await workerPost("/login/claim", w.token, { attemptId: randomUUID() })).json().login).toBeNull();
+    const update = `/login/${requestId}/update`;
+    expect((await workerPost(update, w.token, { attemptId, status: "WAITING", url: "https://evil.invalid/", code: "ABCD-EF123" })).statusCode).toBe(400);
+    expect((await workerPost(update, w.token, { attemptId, status: "WAITING", url: "https://auth.openai.com/codex/device", code: "ABCD-EF123", token: "forbidden" })).statusCode).toBe(400);
+    expect((await workerPost(update, w.token, { attemptId, status: "WAITING", url: "https://auth.openai.com/codex/device", code: "ABCD-EF123" })).statusCode).toBe(200);
+    await workerPost(update, w.token, { attemptId, status: "PREPARING" });
+    const operatorView = await app.inject({ url: "/v1/operator/review-workers", headers: { cookie: operator.cookie } });
+    expect(operatorView.body).toContain("ABCD-EF123"); expect(operatorView.body).not.toContain(attemptId);
+    expect((await app.inject({ url: "/v1/operator/review-workers", headers: { cookie: customer.cookie } })).statusCode).toBe(403);
+    expect((await workerPost(update, w.token, { attemptId, status: "SUCCEEDED" })).statusCode).toBe(200);
+    expect((await workerPost(update, w.token, { attemptId, status: "SUCCEEDED" })).statusCode).toBe(200);
+    expect(JSON.stringify((await prisma.reviewWorker.findUniqueOrThrow({ where: { id: w.worker.id } })).loginRequest)).not.toContain("ABCD-EF123");
+  });
+  it("login cancellation, expiry, foreign workers and revocation fence the prompt", async () => {
+    const w = await pair(), other = await pair(), route = `/v1/operator/review-workers/${w.worker.id}/login`;
+    await workerPost("/status", w.token, { remoteLogin: true, providers: [{ provider: "codex", state: "READY" }] });
+    for (const end of ["cancel", "expire", "revoke"]) {
+      const requestId = randomUUID(), attemptId = randomUUID();
+      await post(route, operator.cookie, { requestId }); await workerPost("/login/claim", w.token, { attemptId });
+      const body = { attemptId, status: "WAITING", url: "https://auth.openai.com/codex/device", code: "ABCD-EF123" };
+      expect((await workerPost(`/login/${requestId}/update`, other.token, body)).statusCode).toBe(409);
+      await workerPost(`/login/${requestId}/update`, w.token, body);
+      if (end === "cancel") await post(`${route}/cancel`, operator.cookie, { requestId });
+      if (end === "expire") {
+        const record = await prisma.reviewWorker.findUniqueOrThrow({ where: { id: w.worker.id } });
+        await prisma.reviewWorker.update({ where: { id: w.worker.id }, data: { loginRequest: { ...(record.loginRequest as object), expiresAt: new Date(Date.now() - 1000).toISOString() } } });
+        const view = await app.inject({ url: "/v1/operator/review-workers", headers: { cookie: operator.cookie } });
+        expect(view.body).not.toContain("ABCD-EF123");
+      }
+      if (end === "revoke") await post(`/v1/operator/review-workers/${w.worker.id}/revoke`, operator.cookie, {});
+      expect((await workerPost(`/login/${requestId}/update`, w.token, body)).statusCode).toBe(end === "revoke" ? 401 : 409);
+      expect(JSON.stringify((await prisma.reviewWorker.findUniqueOrThrow({ where: { id: w.worker.id } })).loginRequest)).not.toContain("ABCD-EF123");
+    }
+  });
+  it("offline workers cannot start login and an active review wins the shared lock", async () => {
+    const w = await pair(), route = `/v1/operator/review-workers/${w.worker.id}/login`;
+    await workerPost("/status", w.token, { remoteLogin: true, providers: [{ provider: "codex", state: "READY" }] });
+    await prisma.reviewWorker.update({ where: { id: w.worker.id }, data: { lastSeenAt: new Date(Date.now() - 90_000) } });
+    expect((await post(route, operator.cookie, { requestId: randomUUID() })).json().error.code).toBe("WORKER_OFFLINE");
+    await workerPost("/status", w.token, { remoteLogin: true, providers: [{ provider: "codex", state: "READY" }] });
+    const p = await project(), id = await queue(p.id), attemptId = randomUUID();
+    // Isolate claim ordering from other tests' intentionally unfinished queue entries.
+    await prisma.reviewJob.updateMany({ where: { status: "QUEUED", id: { not: id } }, data: { status: "CANCELLED" } });
+    await workerPost("/claim", w.token, { attemptId, providers: ["codex"] });
+    expect((await post(route, operator.cookie, { requestId: randomUUID() })).json().error.code).toBe("WORKER_BUSY");
+    await workerPost(`/jobs/${id}/fail`, w.token, { attemptId, code: "AUTH" });
+  });
+
+  it("old-format status cancels remote login on rollback and restores the upgrade guidance", async () => {
+    const w = await pair(), requestId = randomUUID(), route = `/v1/operator/review-workers/${w.worker.id}/login`;
+    await workerPost("/status", w.token, { remoteLogin: true, providers: [{ provider: "codex", state: "READY" }] });
+    await post(route, operator.cookie, { requestId });
+    await workerPost("/status", w.token, { providers: [{ provider: "codex", state: "READY" }] });
+    const record = await prisma.reviewWorker.findUniqueOrThrow({ where: { id: w.worker.id } });
+    expect(record.remoteLogin).toBe(false); expect((record.loginRequest as { status: string }).status).toBe("CANCELLED");
+    expect((await post(route, operator.cookie, { requestId: randomUUID() })).json().error.code).toBe("WORKER_UPGRADE");
+  });
+
 });

@@ -1213,3 +1213,7 @@
 .review-report-heading { scroll-margin-top: 110px; }
 .review-report-heading:focus { outline: 2px solid var(--mint); outline-offset: 5px; }
 @media (max-width: 720px) { .review-assistant select { font-size: 16px; } }
+.worker-login { margin-top: 16px; padding: 16px; border: 1px solid #577789; border-radius: 10px; }
+.worker-login .button { margin: 8px 8px 8px 0; }
+.worker-login-code { font-family: var(--font-mono), monospace; font-size: 1.2rem; letter-spacing: .08em; white-space: nowrap; }
+.portal-shell .worker-login a.button:not(.outline):hover { color: #17252e; }

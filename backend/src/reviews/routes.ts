@@ -9,6 +9,7 @@ import { createProjectAccess, projectId } from "../project-access.js";
 import { AppError } from "../shared/errors.js";
 import { sourceSnapshot } from "./source.js";
 import { redactText } from "./redaction.js";
+import { loginActive, loginSchema, loginState, loginView, deviceUrl } from "./login.js";
 import { REVIEW_POLICY, activityInputSchema, activitySchema, discussionSchema, providerStatusSchema, failureCodes, inputDigest, providers, reportSchema, type RequestSnapshot } from "./types.js";
 
 const leaseMs = 120_000;
@@ -21,7 +22,7 @@ async function snapshot(tx: Prisma.TransactionClient, id: string): Promise<Reque
 function bounded(input: RequestSnapshot): RequestSnapshot {
   return { summary: input.summary, requests: input.requests.slice(0, 20).map(r => ({ ...r, detail: r.detail.slice(0, 2000) })) };
 }
-const workerSelect = { id: true, name: true, createdAt: true, lastSeenAt: true, revokedAt: true, providerStatus: true, statusAt: true } as const;
+const workerSelect = { id: true, name: true, createdAt: true, lastSeenAt: true, revokedAt: true, providerStatus: true, statusAt: true, remoteLogin: true, loginRequest: true } as const;
 export async function pairWorker(prisma: PrismaClient, env: Env, githubId: string, name: string) {
   const operator = await prisma.account.findUnique({ where: { githubId } });
   if (!operator || !isOperator(operator, env)) throw new AppError(403, "OPERATOR_REQUIRED", "Only the project team can pair a worker.");
@@ -52,9 +53,17 @@ export async function registerReviews(app: FastifyInstance, { prisma, env, githu
     }
     return job;
   }
+  async function workerViews(where: Prisma.ReviewWorkerWhereInput = {}, withJobs = false) {
+    const records = await prisma.reviewWorker.findMany({ where, select: { ...workerSelect, jobs: { where: { status: "RUNNING" }, select: { id: true, projectId: true, provider: true }, take: 1 } }, orderBy: { createdAt: "desc" }, take: 30 });
+    for (const record of records) {
+      const state = loginState(record.loginRequest);
+      if (state?.status === "EXPIRED") await prisma.reviewWorker.updateMany({ where: { id: record.id, loginRequest: { equals: record.loginRequest! } }, data: { loginRequest: state } });
+    }
+    return records.map(record => ({ ...record, jobs: withJobs ? record.jobs : [], loginRequest: loginView(record.loginRequest) }));
+  }
   app.get("/v1/operator/review-workers", async request => {
     await actor(request, true);
-    return { workers: await prisma.reviewWorker.findMany({ select: { ...workerSelect, jobs: { where: { status: "RUNNING" }, select: { id: true, projectId: true, provider: true }, take: 1 } }, orderBy: { createdAt: "desc" }, take: 30 }) };
+    return { workers: await workerViews({}, true) };
   });
   app.post("/v1/operator/review-workers", async request => {
     const account = await actor(request, true);
@@ -65,8 +74,73 @@ export async function registerReviews(app: FastifyInstance, { prisma, env, githu
     await actor(request, true);
     return prisma.$transaction(async tx => {
       await reviewLock(tx);
-      await tx.reviewWorker.updateMany({ where: { id: params(request) }, data: { revokedAt: new Date() } });
+      await tx.reviewWorker.updateMany({ where: { id: params(request) }, data: { revokedAt: new Date(), loginRequest: Prisma.JsonNull } });
       await tx.reviewJob.updateMany({ where: { workerId: params(request), status: "RUNNING" }, data: { status: "CANCELLED", completedAt: new Date(), leaseExpiresAt: null } });
+      return { saved: true };
+    });
+  });
+  app.post("/v1/operator/review-workers/:id/login", async request => {
+    await actor(request, true);
+    const { requestId } = z.object({ requestId: z.uuid() }).strict().parse(request.body);
+    return prisma.$transaction(async tx => {
+      await reviewLock(tx);
+      const owner = await tx.reviewWorker.findUnique({ where: { id: params(request) } });
+      if (!owner || owner.revokedAt) throw new AppError(404, "WORKER_REQUIRED", "This worker connection is no longer available.");
+      const prior = loginState(owner.loginRequest);
+      if (prior?.id === requestId) return { login: loginView(prior) };
+      if (prior && loginActive(prior.status)) return { login: loginView(prior) };
+      if (!owner.remoteLogin) throw new AppError(409, "WORKER_UPGRADE", "Update the Docker worker to enable backoffice reconnect.");
+      if (!owner.lastSeenAt || Date.now() - owner.lastSeenAt.getTime() >= 60_000) throw new AppError(409, "WORKER_OFFLINE", "Start the worker on its host, then reconnect Codex here.");
+      if (await tx.reviewJob.count({ where: { workerId: owner.id, status: "RUNNING", leaseExpiresAt: { gt: new Date() } } })) throw new AppError(409, "WORKER_BUSY", "Wait for this worker's review to finish, then reconnect Codex.");
+      const login = { id: requestId, status: "QUEUED", expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() };
+      await tx.reviewWorker.update({ where: { id: owner.id }, data: { loginRequest: login } });
+      return { login };
+    });
+  });
+  app.post("/v1/operator/review-workers/:id/login/cancel", async request => {
+    await actor(request, true);
+    const { requestId } = z.object({ requestId: z.uuid() }).strict().parse(request.body);
+    return prisma.$transaction(async tx => {
+      await reviewLock(tx);
+      const owner = await tx.reviewWorker.findUnique({ where: { id: params(request) } });
+      const state = loginState(owner?.loginRequest);
+      if (state?.id === requestId && loginActive(state.status)) await tx.reviewWorker.update({ where: { id: params(request) }, data: { loginRequest: { id: state.id, status: "CANCELLED", expiresAt: state.expiresAt } } });
+      return { saved: true };
+    });
+  });
+  app.post("/v1/review-worker/login/claim", async request => {
+    const owner = await worker(request), input = attempt.parse(request.body);
+    return prisma.$transaction(async tx => {
+      await reviewLock(tx);
+      const fresh = await tx.reviewWorker.findUniqueOrThrow({ where: { id: owner.id } });
+      if (fresh.revokedAt) throw leaseLost();
+      const state = loginState(fresh.loginRequest);
+      if (!state || !loginActive(state.status)) {
+        if (state?.status === "EXPIRED") await tx.reviewWorker.update({ where: { id: owner.id }, data: { loginRequest: state } });
+        return { login: null };
+      }
+      if (await tx.reviewJob.count({ where: { workerId: owner.id, status: "RUNNING", leaseExpiresAt: { gt: new Date() } } })) return { login: null };
+      if (state.attemptId && state.attemptId !== input.attemptId) return { login: null };
+      const login = { ...state, status: state.status === "QUEUED" ? "PREPARING" : state.status, attemptId: input.attemptId };
+      await tx.reviewWorker.update({ where: { id: owner.id }, data: { loginRequest: login, lastSeenAt: new Date() } });
+      return { login: { id: login.id, expiresAt: login.expiresAt } };
+    });
+  });
+  app.post("/v1/review-worker/login/:id/update", async request => {
+    const owner = await worker(request);
+    const input = z.object({ attemptId: z.uuid(), status: z.enum(["PREPARING", "WAITING", "SUCCEEDED", "FAILED"]), url: z.literal(deviceUrl).optional(), code: loginSchema.shape.code }).strict().refine(v => v.status !== "WAITING" || Boolean(v.url && v.code)).parse(request.body);
+    return prisma.$transaction(async tx => {
+      await reviewLock(tx);
+      const fresh = await tx.reviewWorker.findUniqueOrThrow({ where: { id: owner.id } });
+      const state = loginState(fresh.loginRequest);
+      if (fresh.revokedAt) throw leaseLost();
+      if (!state || state.id !== params(request) || state.attemptId !== input.attemptId || !loginActive(state.status)) {
+        if (state?.id === params(request) && state.attemptId === input.attemptId && state.status === input.status && ["SUCCEEDED", "FAILED"].includes(state.status)) return { saved: true };
+        throw leaseLost();
+      }
+      if (state.status === "WAITING" && input.status === "PREPARING") { await tx.reviewWorker.update({ where: { id: owner.id }, data: { lastSeenAt: new Date() } }); return { saved: true }; }
+      const login = { id: state.id, expiresAt: state.expiresAt, attemptId: state.attemptId, status: input.status, ...(input.status === "WAITING" ? { url: input.url!, code: input.code! } : {}) };
+      await tx.reviewWorker.update({ where: { id: owner.id }, data: { loginRequest: login, lastSeenAt: new Date() } });
       return { saved: true };
     });
   });
@@ -90,7 +164,7 @@ export async function registerReviews(app: FastifyInstance, { prisma, env, githu
     if (cursor && !await prisma.reviewJob.findFirst({ where: { id: cursor, projectId: project.id }, select: { id: true } })) throw new AppError(404, "REVIEW_NOT_FOUND", "This review is not available.");
     const jobs = await prisma.reviewJob.findMany({ where: { projectId: project.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 11, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}) });
     const page = jobs.slice(0, 10);
-    return { jobs: page.map(job => ({ id: job.id, provider: job.provider, status: job.status, commit: job.commit, createdAt: job.createdAt, completedAt: job.completedAt, errorCode: job.errorCode, result: job.result, coverage: job.coverage, instructions: job.instructions, activity: job.activity, activityOmitted: job.activityOmitted, inputDigest: job.inputDigest, stale: job.inputDigest !== digest })), evidenceDigest: digest, nextCursor: jobs.length > 10 ? page.at(-1)!.id : null, onlineWorkers: await prisma.reviewWorker.count({ where: { revokedAt: null, lastSeenAt: { gt: new Date(Date.now() - 60_000) } } }), workers: await prisma.reviewWorker.findMany({ where: { revokedAt: null }, select: workerSelect, orderBy: { lastSeenAt: "desc" }, take: 30 }) };
+    return { jobs: page.map(job => ({ id: job.id, provider: job.provider, status: job.status, commit: job.commit, createdAt: job.createdAt, completedAt: job.completedAt, errorCode: job.errorCode, result: job.result, coverage: job.coverage, instructions: job.instructions, activity: job.activity, activityOmitted: job.activityOmitted, inputDigest: job.inputDigest, stale: job.inputDigest !== digest })), evidenceDigest: digest, nextCursor: jobs.length > 10 ? page.at(-1)!.id : null, onlineWorkers: await prisma.reviewWorker.count({ where: { revokedAt: null, lastSeenAt: { gt: new Date(Date.now() - 60_000) } } }), workers: await workerViews({ revokedAt: null }, true) };
   });
   app.post("/v1/operator/projects/:id/review-jobs", async request => {
     const account = await actor(request, true);
@@ -135,10 +209,15 @@ export async function registerReviews(app: FastifyInstance, { prisma, env, githu
   });
   app.post("/v1/review-worker/status", async request => {
     const owner = await worker(request);
-    const input = z.object({ providers: z.array(providerStatusSchema).min(1).max(2) }).strict().parse(request.body);
+    const input = z.object({ providers: z.array(providerStatusSchema).min(1).max(2), remoteLogin: z.boolean().optional() }).strict().parse(request.body);
     if (new Set(input.providers.map(p => p.provider)).size !== input.providers.length) throw new AppError(400, "INVALID_STATUS", "Providers must be unique.");
-    await prisma.reviewWorker.updateMany({ where: { id: owner.id, revokedAt: null }, data: { providerStatus: input.providers, statusAt: new Date(), lastSeenAt: new Date() } });
-    return { saved: true };
+    return prisma.$transaction(async tx => {
+      await reviewLock(tx);
+      const remoteLogin = Boolean(input.remoteLogin && input.providers.some(p => p.provider === "codex"));
+      const state = loginState((await tx.reviewWorker.findUniqueOrThrow({ where: { id: owner.id } })).loginRequest);
+      await tx.reviewWorker.updateMany({ where: { id: owner.id, revokedAt: null }, data: { providerStatus: input.providers, remoteLogin, ...(!remoteLogin && state && loginActive(state.status) ? { loginRequest: { id: state.id, status: "CANCELLED", expiresAt: state.expiresAt } } : {}), statusAt: new Date(), lastSeenAt: new Date() } });
+      return { saved: true };
+    });
   });
   app.post("/v1/operator/projects/:id/review-jobs/:jobId/cancel", async request => {
     const account = await actor(request, true);
@@ -166,6 +245,8 @@ export async function registerReviews(app: FastifyInstance, { prisma, env, githu
         await active(tx, repeat.id, owner.id, input.attemptId);
         return { job: { id: repeat.id, provider: repeat.provider, attemptId: input.attemptId } };
       }
+      const login = loginState((await tx.reviewWorker.findUniqueOrThrow({ where: { id: owner.id } })).loginRequest);
+      if (login && loginActive(login.status)) return { job: null };
       if (await tx.reviewJob.count({ where: { workerId: owner.id, status: "RUNNING" } })) return { job: null };
       const job = await tx.reviewJob.findFirst({ where: { status: "QUEUED", provider: { in: input.providers }, project: { aiReviewConsentAt: { not: null }, aiReviewConsentVersion: REVIEW_POLICY } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
       if (!job) return { job: null };

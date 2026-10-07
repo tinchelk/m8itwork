@@ -104,3 +104,17 @@ Before additive migration 009, manual Postgres backup `f3e7cd81-d4e1-47a7-99ff-8
 Post-deployment checks confirmed API health 200, dashboard/backoffice HTTP 200, signed-out operator routes 401, unpaired worker claims 401 and foreign-origin worker requests 403. The deployed privacy page contains the AI-review/provider disclosure. A read-only database query confirmed `202610060009_review_worker` is finished and the paired **Tin-Mac** worker is online. No production customer code was processed or draft published during this rollout. Local synthetic Codex and complete queue-to-result subscription smokes passed separately.
 
 The worker uses a private standalone runtime outside the Documents checkout and starts through a macOS LaunchAgent. Its pairing key is stored only in the private local configuration; Railway stores its hash. Codex subscription login remains on the Mac. Claude is implemented but not authenticated/enabled on this machine. [REVIEW_WORKER.md](REVIEW_WORKER.md) records the operator workflow, startup/pause/revocation and upgrade procedure. Existing real-provider and Stripe acceptance gates remain open; this rollout does not change payment readiness.
+
+## Docker worker and remote review operations — October 7, 2026
+
+Reviewed milestone `0fc33f67048ad2292e4a6ac1bc05e284f1ff9ea8` passed all three independent reviews, 106 real-PostgreSQL backend tests, 92 desktop/mobile checks and both image architectures. [CI run 37627137218](https://github.com/tinchelk/m8itwork/actions/runs/37627137218) passed verify and native Linux Docker jobs. Exact Git archives excluded ignored secrets. Confirmed pre-010 backup: `40f2ecc8-fa25-4de2-8909-7b38e5846c5b`. All three service deployments succeeded:
+
+| Service | Deployment |
+| --- | --- |
+| API | `fc906124-834c-40e7-a51f-98850631a602` |
+| Customer app | `a71b9c0e-9c65-4917-bc6f-319e447d4312` |
+| Backoffice | `5c35f853-77a8-4fe0-aa09-4d530e3a98ad` |
+
+The first customer upload was interrupted and its failed deployment `7abfc657-68ac-475c-9aad-09ba87ad3d8f` was replaced by the successful exact-archive retry above. A separate Tin-Mac Docker pairing `81142787-5301-40bc-9036-4a2c64d4f4f9` was configured privately in named volume `m8itwork-review_worker_home`; only cached Codex auth was transferred, and the container doctor passed. Railway reports Codex READY. The previous native Tin-Mac LaunchAgent was stopped/disabled and its pairing revoked after verifying no active jobs. No customer job was fabricated, source processed or result published for these checks. Claude subscription login remains unverified.
+
+Remote Codex reconnect adds migration 011; backup `b55131b1-d0e1-4134-9045-be2c07808f55` is confirmed before its release. Its reviewed brief, verification and rollout/rollback order are in [REMOTE_WORKER_LOGIN.md](REMOTE_WORKER_LOGIN.md). This does not close outstanding live-payment or provider acceptance gates.

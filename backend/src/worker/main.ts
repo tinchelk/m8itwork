@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { z } from "zod";
 import { discussionSchema, providerStatusSchema, requestSnapshotSchema, providers, type SourceSnapshot, type ReviewProvider, type ProviderStatus } from "../reviews/types.js";
 import { ProviderFailure, runReview, subscriptionReady } from "./provider.js";
+import { deviceLogin } from "./device-login.js";
 const configSchema = z.object({
   apiUrl: z.url().refine(s => { const u = new URL(s); return !u.username && !u.password && !u.search && !u.hash && u.pathname === "/" && (u.protocol === "https:" || (u.protocol === "http:" && ["localhost", "127.0.0.1"].includes(u.hostname))); }),
   token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
@@ -68,7 +69,7 @@ export async function main(args = process.argv.slice(2), configFile = defaultCon
   } catch { /* no quota cooldown saved */ }
   let checkedAt = 0;
   async function status() {
-    try { await api("/status", { providers: config.providers.map(provider => readiness.get(provider) ?? { provider, state: "ERROR" }) }); }
+    try { await api("/status", { remoteLogin: config.providers.includes("codex"), providers: config.providers.map(provider => readiness.get(provider) ?? { provider, state: "ERROR" }) }); }
     catch (error) { if (error instanceof WorkerApiError && error.status === 401) stop(); /* transient failure is reflected by last-seen expiry */ }
   }
   async function probe() {
@@ -82,10 +83,50 @@ export async function main(args = process.argv.slice(2), configFile = defaultCon
       } catch (error) { readiness.set(provider, { provider, state: error instanceof ProviderFailure && error.code === "AUTH" ? "NEEDS_LOGIN" : "ERROR" }); }
     }
   }
+  let loginAttempt = randomUUID();
+  async function reconnect() {
+    if (!config.providers.includes("codex")) return false;
+    const reply = z.object({ login: z.object({ id: z.uuid(), expiresAt: z.iso.datetime() }).nullable() }).parse(await api("/login/claim", { attemptId: loginAttempt }));
+    if (!reply.login || stopping || shutdown.signal.aborted) return false;
+    const login = reply.login, attemptId = loginAttempt;
+    current = new AbortController(); const controller = current;
+    const expiry = setTimeout(() => controller.abort(), Math.max(0, Date.parse(login.expiresAt) - Date.now()));
+    const base = `/login/${login.id}/update`;
+    let failures = 0, heartbeatBusy = false;
+    const heartbeat = setInterval(() => {
+      if (heartbeatBusy) return; heartbeatBusy = true;
+      void api(base, { attemptId, status: "PREPARING" }).then(async () => { failures = 0; await status(); }).catch((error: unknown) => {
+        if ((error instanceof WorkerApiError && [401, 409].includes(error.status)) || ++failures >= 3) controller.abort();
+      }).finally(() => { heartbeatBusy = false; });
+    }, 10_000);
+    readiness.set("codex", { provider: "codex", state: "NEEDS_LOGIN" }); await status();
+    try {
+      if (stopping || controller.signal.aborted || shutdown.signal.aborted) throw new Error("Worker stopped before sign-in.");
+      await deviceLogin(binary("codex"), AbortSignal.any([controller.signal, shutdown.signal]), async prompt => {
+        // Retry the exact safe prompt; never upload raw CLI output or credentials.
+        for (let retry = 0; ; retry++) {
+          try { await api(base, { attemptId, status: "WAITING", ...prompt }); break; }
+          catch (e) { if (retry >= 2 || (e instanceof WorkerApiError && e.status < 500)) throw e; await wait(1000); }
+        }
+      });
+      await api(base, { attemptId, status: "SUCCEEDED" });
+      paused.delete("codex"); readiness.set("codex", { provider: "codex", state: "READY" });
+      await writeFile(cooldownFile, JSON.stringify([...readiness.values()].filter(p => p.state === "LIMITED")), { mode: 0o600 });
+      console.log("Codex subscription reconnected.");
+    } catch {
+      if (!controller.signal.aborted && !shutdown.signal.aborted) await api(base, { attemptId, status: "FAILED" }).catch(() => {});
+      console.log("Codex reconnect stopped. Check backoffice for the next action.");
+    } finally {
+      clearTimeout(expiry); clearInterval(heartbeat); current = null; loginAttempt = randomUUID(); checkedAt = 0; await status();
+    }
+    return true;
+  }
   let attemptId = randomUUID();
   console.log("Review worker running. One review at a time; subscription only. Ctrl+C to stop.");
   try {
     while (!stopping) {
+      try { if (await reconnect()) { if (mode === "once") break; continue; } }
+      catch (e) { if (e instanceof WorkerApiError && e.status === 401) break; if (stopping) break; await wait(20_000); continue; }
       await probe(); if (stopping) break;
       await status(); if (stopping) break;
       const available = config.providers.filter(p => (paused.get(p) ?? 0) <= Date.now() && readiness.get(p)?.state === "READY");

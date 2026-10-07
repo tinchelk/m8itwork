@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { eligibleSource, redactSource } from "../src/reviews/source.js";
 import { claudeArguments, codexArguments, subscriptionEnvironment, visibleMessage } from "../src/worker/provider.js";
+import { devicePrompt } from "../src/worker/device-login.js";
 describe("subscription review boundaries", () => {
   it("excludes secrets, instructions, artifacts and traversal paths", () => {
     for (const path of [".env", ".github/workflows/build.yml", "AGENTS.md", "CLAUDE.md", "src/credentials.json", "node_modules/x.ts", "data/customers.json", "../auth.ts", "/absolute.ts", "package-lock.json", "config/production.json", "appsettings.Production.json", "src/environments/environment.prod.ts"]) expect(eligibleSource(path), path).toBe(false);
@@ -26,4 +27,12 @@ describe("subscription review boundaries", () => {
     expect(text).toContain("Ready."); expect(text).not.toContain("x".repeat(43));
     expect(visibleMessage("malformed transcript")).toBeNull();
   });
+  it("extracts only an official device prompt, never generic URLs or credentials", () => {
+    const prompt = "1. Open this link\n   https://auth.openai.com/codex/device\n2. Enter this one-time code (expires in 15 minutes)\n   ABCD-EF123\n";
+    expect(devicePrompt(prompt)).toEqual({ url: "https://auth.openai.com/codex/device", code: "ABCD-EF123" });
+    expect(devicePrompt(prompt.replace("https://auth.openai.com/codex/device", "https://auth.openai.com/codex/device/evil"))).toBeNull();
+    expect(devicePrompt(prompt.replace("ABCD-EF123", "access-token-secret"))).toBeNull();
+    expect(devicePrompt("https://auth.openai.com/codex/device\nAuthorization: Bearer ABCD-EF123")).toBeNull();
+  });
+
 });

@@ -125,6 +125,8 @@ model ReviewWorker {
   revokedAt DateTime?
   providerStatus Json?
   statusAt DateTime?
+  remoteLogin Boolean @default(false)
+  loginRequest Json?
   jobs ReviewJob[]
 }
 

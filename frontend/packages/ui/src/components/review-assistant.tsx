@@ -4,6 +4,7 @@ import { API, api, WorkspaceError, type Project } from "./workspace-types";
 import type { Save } from "./workspace-forms";
 import { useFormDraft } from "./workspace-drafts";
 import { readReviewSession, reviewSessionKey, writeReviewSession, type ReviewQueueRequest, type ReviewSession } from "./review-session";
+import { WorkerLogin, type WorkerLoginState } from "./worker-login";
 const displayTime = (value: string) => new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(value));
 export interface ReviewReport {
   summary: string;
@@ -20,7 +21,7 @@ interface ReviewJob {
   activityOmitted?: number;
   inputDigest?: string;
 }
-interface Worker { id: string; name: string; lastSeenAt: string | null; revokedAt: string | null; statusAt?: string | null; providerStatus?: { provider: string; state: string; retryAt?: string }[] | null; jobs?: { id: string; projectId: string; provider: string }[] }
+interface Worker { remoteLogin?: boolean; loginRequest?: WorkerLoginState | null; id: string; name: string; lastSeenAt: string | null; revokedAt: string | null; statusAt?: string | null; providerStatus?: { provider: string; state: string; retryAt?: string }[] | null; jobs?: { id: string; projectId: string; provider: string }[] }
 interface ReviewPage { jobs: ReviewJob[]; onlineWorkers: number; workers?: Worker[]; nextCursor?: string | null; evidenceDigest?: string }
 async function fetchReviewPage(prefix: string, saved: ReviewSession | null) {
   const data = await api<ReviewPage>(prefix);
@@ -41,7 +42,8 @@ const providerLabels: Record<string, string> = { READY: "Ready", BUSY: "Working"
 function ProviderStatus({ worker, now }: { worker: Worker; now: number }) {
   const fresh = !worker.revokedAt && Boolean(worker.lastSeenAt && now - new Date(worker.lastSeenAt).getTime() < 60_000 && worker.statusAt && now - new Date(worker.statusAt).getTime() < 120_000);
   return <div className="worker-provider-status">
-    {!worker.providerStatus?.length ? <p className="portal-muted">Provider status not reported yet. Start the current Docker worker to report readiness.</p> : worker.providerStatus.map(p => <div key={p.provider}><strong>{p.provider}</strong><span className={`provider-state ${fresh ? p.state.toLowerCase() : "stale"}`}>{fresh ? providerLabels[p.state] ?? "Unknown status" : "Status stale / offline"}</span>{fresh && p.retryAt && <p className="portal-muted">Next check after {displayTime(p.retryAt)}.</p>}{fresh && p.state === "NEEDS_LOGIN" && <p>On the worker host, stop the container and run <code>docker compose -f compose.worker.yml run --rm -it worker login-{p.provider}</code>, then run doctor and start it again. Device/browser sign-in can be completed from your own computer.</p>}{fresh && p.state === "ERROR" && <p className="portal-muted">Check the latest review failure and worker logs, then run the subscription doctor on its host.</p>}</div>)}
+    {!worker.providerStatus?.length ? <p className="portal-muted">Provider status not reported yet. Start the current Docker worker to report readiness.</p> : worker.providerStatus.map(p => <div key={p.provider}><strong>{p.provider}</strong><span className={`provider-state ${fresh ? p.state.toLowerCase() : "stale"}`}>{fresh ? providerLabels[p.state] ?? "Unknown status" : "Status stale / offline"}</span>{fresh && p.retryAt && <p className="portal-muted">Next check after {displayTime(p.retryAt)}.</p>}{fresh && p.state === "NEEDS_LOGIN" && (p.provider !== "codex" || !worker.remoteLogin) && <p>On the worker host, stop the container and run <code>docker compose -f compose.worker.yml run --rm -it worker login-{p.provider}</code>, then run doctor and start it again. Device/browser sign-in can be completed from your own computer.</p>}{fresh && p.state === "ERROR" && <p className="portal-muted">Check the latest review failure and worker logs, then run the subscription doctor on its host.</p>}</div>)}
+    {worker.providerStatus?.some(p => p.provider === "codex") && <WorkerLogin worker={worker} />}
   </div>;
 }
 const failures: Record<string, string> = {
