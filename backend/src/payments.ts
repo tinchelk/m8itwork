@@ -30,6 +30,10 @@ export async function registerPayments(
         "Payment collection is being set up. Your agreement is saved; contact the team in this project.",
       );
   };
+  async function requireOpenFinancialProject(accountId: string) {
+    if ((await prisma.account.findUnique({ where: { id: accountId }, select: { closedAt: true } }))?.closedAt)
+      throw new AppError(409, "ACCOUNT_CLOSED", "The customer's account is closed. This project is read-only.");
+  }
   async function milestoneFor(
     id: string,
     project: { id: string; currentProposalId: string | null },
@@ -431,6 +435,7 @@ export async function registerPayments(
       z.object({}).strict().parse(request.body);
       ensureEnabled();
       const project = await projectFor(account, projectId(request), true);
+      await requireOpenFinancialProject(project.accountId);
       const milestone = await milestoneFor(
         params(request.params).milestoneId,
         project,
@@ -473,6 +478,7 @@ export async function registerPayments(
         .strict()
         .parse(request.body);
       const project = await projectFor(account, projectId(request), true);
+      await requireOpenFinancialProject(project.accountId);
       const milestone = await milestoneFor(
         params(request.params).milestoneId,
         project,

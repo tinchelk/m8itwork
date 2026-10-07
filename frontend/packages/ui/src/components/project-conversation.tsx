@@ -12,11 +12,13 @@ export function ProjectConversation({
   accountId,
   team,
   onError,
+  readOnly = false,
 }: {
   projectId: string;
   accountId: string;
   team: boolean;
   onError: (reason: unknown) => void;
+  readOnly?: boolean;
 }) {
   const [page, setPage] = useState<Page | null>(null);
   const [history, setHistory] = useState<Message[]>([]);
@@ -212,88 +214,92 @@ export function ProjectConversation({
               <li className="portal-empty">
                 No messages yet.{" "}
                 {team
-                  ? "Introduce yourself and ask about the customer’s next step."
+                  ? readOnly
+                    ? "There are no saved messages for this project."
+                    : "Introduce yourself and ask about the customer’s next step."
                   : "Ask a question or tell us more about your next step."}
               </li>
             )}
           </ol>
         </>
       )}
-      <form
-        ref={formRef}
-        onInput={draft.capture}
-        onChange={draft.capture}
-        className="portal-form"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          const form = event.currentTarget;
-          const id = form.elements.namedItem("messageId") as HTMLInputElement;
-          const lastBody = form.elements.namedItem(
-            "lastAttemptBody",
-          ) as HTMLInputElement;
-          const body = String(new FormData(form).get("body"));
-          setBusy(true);
-          setNotice(null);
-          try {
-            let originalSaved = false;
-            if (id.value && lastBody.value !== body) {
-              const latest = await api<Page>(prefix);
-              receive(latest);
-              originalSaved = latest.messages.some(
-                (message) => message.id === id.value,
+      {!readOnly && (
+        <form
+          ref={formRef}
+          onInput={draft.capture}
+          onChange={draft.capture}
+          className="portal-form"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const id = form.elements.namedItem("messageId") as HTMLInputElement;
+            const lastBody = form.elements.namedItem(
+              "lastAttemptBody",
+            ) as HTMLInputElement;
+            const body = String(new FormData(form).get("body"));
+            setBusy(true);
+            setNotice(null);
+            try {
+              let originalSaved = false;
+              if (id.value && lastBody.value !== body) {
+                const latest = await api<Page>(prefix);
+                receive(latest);
+                originalSaved = latest.messages.some(
+                  (message) => message.id === id.value,
+                );
+                id.value = crypto.randomUUID();
+              }
+              id.value ||= crypto.randomUUID();
+              lastBody.value = body;
+              draft.capture();
+              await api(prefix, {
+                id: id.value,
+                body,
+              });
+              form.reset();
+              draft.clear();
+              setNotice(
+                originalSaved
+                  ? "Your earlier message was already saved. The edited text is saved as a new message."
+                  : "Message saved in the project.",
               );
-              id.value = crypto.randomUUID();
+              receive(await api<Page>(prefix));
+              requestAnimationFrame(() =>
+                listRef.current?.lastElementChild?.scrollIntoView({
+                  block: "nearest",
+                }),
+              );
+            } catch (reason) {
+              error(reason);
+            } finally {
+              setBusy(false);
             }
-            id.value ||= crypto.randomUUID();
-            lastBody.value = body;
-            draft.capture();
-            await api(prefix, {
-              id: id.value,
-              body,
-            });
-            form.reset();
-            draft.clear();
-            setNotice(
-              originalSaved
-                ? "Your earlier message was already saved. The edited text is saved as a new message."
-                : "Message saved in the project.",
-            );
-            receive(await api<Page>(prefix));
-            requestAnimationFrame(() =>
-              listRef.current?.lastElementChild?.scrollIntoView({
-                block: "nearest",
-              }),
-            );
-          } catch (reason) {
-            error(reason);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <input type="hidden" name="messageId" />
-        <input type="hidden" name="lastAttemptBody" />
-        <label>
-          {team ? "Message to the customer" : "Message to the team"}
-          <textarea
-            name="body"
-            rows={4}
-            minLength={1}
-            maxLength={5000}
-            required
-            placeholder="Share a question, update, or decision. Leave out passwords and secrets."
-          />
-        </label>
-        {notice && (
-          <p role="status" className="portal-notice">
-            {notice}
-          </p>
-        )}
-        <button className="button" disabled={busy}>
-          {busy ? "Saving…" : "Send message"}
-          <span aria-hidden="true">↗</span>
-        </button>
-      </form>
+          }}
+        >
+          <input type="hidden" name="messageId" />
+          <input type="hidden" name="lastAttemptBody" />
+          <label>
+            {team ? "Message to the customer" : "Message to the team"}
+            <textarea
+              name="body"
+              rows={4}
+              minLength={1}
+              maxLength={5000}
+              required
+              placeholder="Share a question, update, or decision. Leave out passwords and secrets."
+            />
+          </label>
+          {notice && (
+            <p role="status" className="portal-notice">
+              {notice}
+            </p>
+          )}
+          <button className="button" disabled={busy}>
+            {busy ? "Saving…" : "Send message"}
+            <span aria-hidden="true">↗</span>
+          </button>
+        </form>
+      )}
       <p className="portal-muted">
         Checks for new messages every 15 seconds while this page is open. No
         email notifications yet.

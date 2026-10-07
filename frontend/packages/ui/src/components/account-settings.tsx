@@ -1,11 +1,32 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { API, api } from "./workspace-types";
 import { AccountGate, CustomerPage, useCustomerAccount } from "./customer-page";
 import { AccountCards } from "./account-cards";
+import {
+  AccountClose,
+  clearClosedAccountDrafts,
+  useClosureRecovery,
+} from "./account-close";
 
 export function AccountSettings() {
   const customer = useCustomerAccount();
+  const clearCustomer = customer.clear;
+  const [closed, setClosed] = useState(false);
+  const onClosed = useCallback(
+    (id: string) => {
+      clearClosedAccountDrafts(id);
+      setClosed(true);
+      clearCustomer();
+    },
+    [clearCustomer],
+  );
+  const recovery = useClosureRecovery(
+    customer.auth?.account?.id ?? null,
+    customer.loaded,
+    closed,
+    onClosed,
+  );
   const [error, setError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null),
     [busy, setBusy] = useState(false);
@@ -68,7 +89,45 @@ export function AccountSettings() {
       logout={customer.logout}
       error={customer.error}
     >
-      {!customer.loaded || !account ? (
+      {closed ? (
+        <section className="portal-card account-closed" role="status">
+          <p className="portal-kicker">ACCOUNT CLOSED</p>
+          <h1>Your account is closed.</h1>
+          <p>
+            You’re signed out on every device. Repository access is disconnected
+            and unagreed requests are withdrawn.
+          </p>
+          <p>
+            Project and billing records stay with our team. For help with those
+            records or returning to m8itwork, contact{" "}
+            <a href="mailto:hello@m8itwork.com">hello@m8itwork.com</a>.
+          </p>
+          <a className="button outline" href="/">
+            Back to m8itwork <span aria-hidden="true">↗</span>
+          </a>
+        </section>
+      ) : !account && (recovery.checking || recovery.error) ? (
+        <section className="portal-card">
+          <h1>Check account closure</h1>
+          {recovery.checking ? (
+            <p role="status">Checking your earlier request…</p>
+          ) : (
+            <>
+              <p className="portal-error" role="alert">
+                {recovery.error}
+              </p>
+              <div className="billing-actions">
+                <button className="button outline" onClick={recovery.retry}>
+                  Check closure result
+                </button>
+                <a className="button outline" href="/login?return=account">
+                  Sign in
+                </a>
+              </div>
+            </>
+          )}
+        </section>
+      ) : !customer.loaded || !account ? (
         <AccountGate
           loaded={customer.loaded}
           account={account}
@@ -102,6 +161,7 @@ export function AccountSettings() {
               <a href="#account-details">Account details</a>
               <a href="#payment-methods">Payment methods</a>
               <a href="#sign-in-methods">Sign-in & security</a>
+              <a href="#close-account">Close account</a>
               <div className="account-support">
                 <p>Need a hand?</p>
                 <a href="mailto:hello@m8itwork.com">hello@m8itwork.com</a>
@@ -233,6 +293,31 @@ export function AccountSettings() {
                   )}
                 </div>
               </section>
+              {(recovery.error || recovery.checking) && (
+                <div className="portal-card">
+                  {recovery.error ? (
+                    <p className="portal-error" role="alert">
+                      {recovery.error}
+                    </p>
+                  ) : (
+                    <p role="status">Checking your earlier closure request…</p>
+                  )}
+                  <button
+                    className="button outline"
+                    onClick={recovery.retry}
+                    disabled={recovery.checking}
+                  >
+                    {recovery.checking ? "Checking…" : "Check closure result"}
+                  </button>
+                </div>
+              )}
+              <AccountClose
+                key={`close:${account.id}`}
+                account={account}
+                onClosed={onClosed}
+                onExpired={customer.fail}
+                onCheckLater={recovery.retry}
+              />
             </div>
           </div>
         </>

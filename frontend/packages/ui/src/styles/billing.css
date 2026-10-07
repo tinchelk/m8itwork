@@ -664,3 +664,37 @@
     text-align: center;
   }
 }
+.account-close-section {
+  border-color: rgba(212, 139, 121, .35);
+}
+.account-close-section .portal-kicker,
+.account-close-section .account-close-button {
+  color: #edb4a5;
+}
+.account-close-dialog .account-close-identity {
+  color: var(--teal);
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}
+.account-close-dialog {
+  overscroll-behavior: contain;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+.account-close-dialog[open] { display: flex; flex-direction: column; }
+.account-close-dialog > :not(.account-close-body) { flex-shrink: 0; }
+.account-close-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.account-close-identity { overflow-wrap: anywhere; }
+.account-close-dialog .account-close-button {
+  background: #bf7763;
+  color: #091b28;
+}
+.account-close-dialog .portal-form {
+  margin-top: 24px;
+}
+.account-close-dialog input {
+  width: 100%;
+}
+.account-closed h1 {
+  margin-bottom: 20px;
+}

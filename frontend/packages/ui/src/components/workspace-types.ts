@@ -80,6 +80,7 @@ export interface Inventory {
   limitations: string[];
 }
 export interface Project extends ProjectListItem {
+  accountClosedAt?: string | null;
   aiReviewConsentAt?: string | null;
   aiReviewConsentVersion?: string | null;
   version: number;
@@ -171,6 +172,7 @@ export const stageLabels: Record<string, string> = {
   BUILDING: "Building",
   VERIFYING: "Verifying",
   COMPLETE: "Complete",
+  CLOSED: "Closed",
 };
 export function displayDate(value: string) {
   return new Intl.DateTimeFormat("en", {

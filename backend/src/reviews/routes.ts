@@ -15,7 +15,7 @@ import { REVIEW_POLICY, activityInputSchema, activitySchema, discussionSchema, p
 
 const leaseMs = 120_000;
 const leaseLost = () => new AppError(409, "LEASE_LOST", "This review attempt is no longer active.");
-const reviewLock = (tx: Prisma.TransactionClient) => tx.$queryRaw`SELECT pg_advisory_xact_lock(814721)::text`;
+import { reviewLock } from "./lock.js";
 async function snapshot(tx: Prisma.TransactionClient, id: string): Promise<RequestSnapshot> {
   const project = await tx.project.findUniqueOrThrow({ where: { id }, include: { requests: { orderBy: [{ createdAt: "desc" }, { id: "asc" }], take: 100 } } });
   return { summary: project.summary, requests: project.requests.map(({ id, kind, title, detail }) => ({ id, kind, title, detail })) };

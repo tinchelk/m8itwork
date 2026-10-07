@@ -17,6 +17,7 @@ import {
 } from "./workspace-forms";
 import { AdminOverview } from "./admin-overview";
 import { CustomerDashboard } from "./customer-dashboard";
+import { ClosedProject } from "./closed-project";
 import { ProjectConversation } from "./project-conversation";
 import {
   ProjectPayments,
@@ -189,6 +190,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
         if (!result.account && params.get("github") === "signin-required")
           setError("Your session expired. Sign in again with the same account to return to your saved request, then connect GitHub.");
         if (params.get("google") === "error") setError("Google sign-in wasn’t completed. Please try again.");
+        if (params.get("google") === "account-closed" || params.get("github") === "account-closed") setError("This account is closed. Contact hello@m8itwork.com for help.");
         if (params.get("google") === "link") setError("That email already belongs to an account. Sign in with your existing method, then connect Google from Account settings.");
         if (params.get("google") === "verify-email") setError("Create and verify an email account first, then connect Google from Account settings. This Google account cannot confirm current ownership of its email address.");
         if (!result.account || (admin && !result.account.isOperator)) return;
@@ -652,6 +654,8 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                   onError={failure}
                 />
               </section>
+            ) : project?.accountClosedAt ? (
+              <ClosedProject project={project} accountId={auth.account.id} onError={failure} save={save} refresh={refresh} />
             ) : project ? (
               <>
                 <div className="portal-project-heading">

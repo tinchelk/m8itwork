@@ -16,6 +16,7 @@ import type { PaymentProvider } from "./stripe-provider.js";
 import { isAppOrigin, type Env } from "./config.js";
 import { AppError } from "./shared/errors.js";
 import { accountFromRequest } from "./accounts.js";
+import { lockAccount } from "./customer-auth.js";
 import { REVIEW_POLICY } from "./reviews/types.js";
 
 const reference = z
@@ -192,6 +193,7 @@ export async function registerWorkspace(
       });
       return {
         ...detail,
+        ...(operator ? { accountClosedAt: (await prisma.account.findUniqueOrThrow({ where: { id: project.accountId }, select: { closedAt: true } })).closedAt } : {}),
         billing: {
           enabled: options.paymentProvider.enabled,
           mode: options.paymentProvider.mode,
@@ -226,6 +228,7 @@ export async function registerWorkspace(
     if ("inspectionId" in input) {
       const current = await session(request, reply);
       const project = await prisma.$transaction(async transaction => {
+        await lockAccount(transaction, account.id);
         // One request ID creates one project, including concurrent retries.
         await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.id}, 0))::text`;
         const active = await accountFromRequest(transaction, request);
@@ -281,7 +284,11 @@ export async function registerWorkspace(
       });
       return reply.code(201).send({ id: project.id });
     }
-    const project = await prisma.project.upsert({
+    const project = await prisma.$transaction(async tx => {
+      await lockAccount(tx, account.id);
+      if ((await accountFromRequest(tx, request))?.id !== account.id)
+        throw new AppError(401, "SIGN_IN_REQUIRED", "Sign in again to start your project.");
+      return tx.project.upsert({
       where: { id: input.id },
       update: {},
       create: {
@@ -303,6 +310,7 @@ export async function registerWorkspace(
         },
       },
     });
+      });
     if (project.accountId !== account.id) throw unavailable();
     return reply.code(201).send({ id: project.id });
   });

@@ -291,6 +291,21 @@ describe.skipIf(!url)(
       ).toBe(200);
       return checkout;
     }
+    it("keeps historical invoice and refund webhooks reconciling after customer closure", async () => {
+      const { id, customer, milestones } = await agreed(); const checkout = await pay(id, customer, milestones[0]!.id);
+      const project = await prisma.project.update({ where: { id }, data: { stage: "COMPLETE" } });
+      expect((await post("/v1/auth/account/close", customer, { accountId: project.accountId, requestId: randomUUID(), confirmation: "CLOSE" })).statusCode).toBe(200);
+      expect((await post(`/v1/operator/projects/${id}/payments/${milestones[0]!.id}/expire`, team, {})).statusCode).toBe(409);
+      expect((await post(`/v1/operator/projects/${id}/payments/${milestones[0]!.id}/recover`, team, { sessionId: checkout.id })).statusCode).toBe(409);
+      checkout.invoiceUrl = "https://invoice.stripe.com/i/closed-fixture";
+      expect((await event("invoice.paid", { id: "in_closed", metadata: { attemptId: checkout.attemptId } })).statusCode).toBe(200);
+      checkout.refundedCents = 1000;
+      expect((await event("charge.refunded", { payment_intent: checkout.paymentIntentId })).statusCode).toBe(200);
+      const saved = await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: checkout.attemptId } });
+      expect(saved).toMatchObject({ status: "PAID", invoiceUrl: checkout.invoiceUrl, refundedCents: 1000 });
+      expect((await get(`/v1/operator/projects/${id}`, team)).statusCode).toBe(200);
+      expect((await prisma.project.findUniqueOrThrow({ where: { id } })).stage).toBe("COMPLETE");
+    });
     it("reconciles delayed invoice documents without duplicating a recorded payment", async () => {
       const { id, customer, milestones } = await agreed();
       const checkout = await pay(id, customer, milestones[0]!.id);

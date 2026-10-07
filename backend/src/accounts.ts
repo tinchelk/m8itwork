@@ -21,7 +21,9 @@ export async function accountFromRequest(
     where: { id },
     include: { account: true },
   });
-  return session && session.expiresAt > new Date() ? session.account : null;
+  return session && session.expiresAt > new Date() && !session.account.closedAt
+    ? session.account
+    : null;
 }
 export async function requireAccount(
   prisma: PrismaClient,
@@ -37,12 +39,26 @@ export async function requireAccount(
   return account;
 }
 export function isOperator(account: Account, env: Env): boolean {
-  return Boolean(account.githubId) && env.OPERATOR_GITHUB_IDS.split(",")
-    .map((id) => id.trim())
-    .includes(account.githubId!);
+  return (
+    !account.closedAt &&
+    Boolean(account.githubId) &&
+    env.OPERATOR_GITHUB_IDS.split(",")
+      .map((id) => id.trim())
+      .includes(account.githubId!)
+  );
+}
+export function assertAccountOpen(account: Account) {
+  if (account.closedAt)
+    throw new AppError(
+      403,
+      "ACCOUNT_CLOSED",
+      "This account is closed. Contact hello@m8itwork.com for help.",
+    );
 }
 export function accountLabel(account: Account): string {
-  return account.displayName || account.githubLogin || account.email || "Customer";
+  return (
+    account.displayName || account.githubLogin || account.email || "Customer"
+  );
 }
 export function setAccountCookie(reply: FastifyReply, raw: string, env: Env) {
   reply.setCookie(ACCOUNT_COOKIE, raw, {

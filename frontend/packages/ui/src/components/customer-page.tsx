@@ -45,6 +45,10 @@ export function useCustomerAccount() {
     },
     [expire],
   );
+  const clear = useCallback(() => {
+    setAuth(current => current ? { ...current, account: null } : null);
+    setError(null);
+  }, []);
   async function logout() {
     setBusy(true);
     setError(null);
@@ -65,6 +69,7 @@ export function useCustomerAccount() {
     busy,
     logout,
     fail,
+    clear,
     retry: () => {
       setLoaded(false);
       setRevision((value) => value + 1);

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient, type ReviewSession } from "@prisma/client";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { ACCOUNT_TTL, cookieHash, requireAccount, setAccountCookie } from "./accounts.js";
+import { ACCOUNT_TTL, assertAccountOpen, cookieHash, requireAccount, setAccountCookie } from "./accounts.js";
 import type { Env } from "./config.js";
 import { isAppOrigin } from "./config.js";
 import { decrypt, encrypt, hash, secret } from "./crypto.js";
@@ -21,6 +21,7 @@ export async function lockAccount(transaction: Prisma.TransactionClient, id: str
   await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`account:${id}`}, 0))`;
 }
 export async function replaceSession(transaction: Prisma.TransactionClient, request: FastifyRequest, review: ReviewSession, accountId: string, raw: string) {
+  assertAccountOpen(await transaction.account.findUniqueOrThrow({ where: { id: accountId } }));
   const [active] = await transaction.$queryRaw<{ accountSessionId: string | null }[]>`SELECT "accountSessionId" FROM "ReviewSession" WHERE "id" = ${review.id} FOR UPDATE`;
   if (!active) throw new AppError(409, "SIGN_IN_CANCELLED", "This sign-in was cancelled. Please sign in again.");
   const previous = [cookieHash(request), active.accountSessionId].filter((value): value is string => Boolean(value));
@@ -75,7 +76,7 @@ export async function registerCustomerAuth(app: FastifyInstance, options: {
       await lockAccount(transaction, accountId);
       const account = await transaction.account.findUniqueOrThrow({ where: { id: accountId } });
       // The recovery address may have changed since the public email lookup.
-      if (account.email !== destination) return false;
+      if (account.closedAt || account.email !== destination) return false;
       if (purpose === "VERIFY_EMAIL") {
         if (account.emailVerifiedAt || !pending) return false;
         if (pending.previousId && !(await transaction.accountToken.findUnique({ where: { id: pending.previousId } }))) return false;
@@ -227,6 +228,7 @@ export async function registerCustomerAuth(app: FastifyInstance, options: {
             throw new AppError(401, "SIGN_IN_REQUIRED", "Sign in again to link Google.");
           await lockAccount(transaction, signedIn.accountId);
           const current = await transaction.account.findUniqueOrThrow({ where: { id: signedIn.accountId } });
+          assertAccountOpen(current);
           if (!identity.mailboxAuthoritative && (!current.emailVerifiedAt || current.email !== identity.email))
             throw new AppError(409, "GOOGLE_EMAIL_CHALLENGE", "Verify your email before connecting this Google account.");
           const emailOwner = await transaction.account.findUnique({ where: { email: identity.email } });
@@ -245,6 +247,7 @@ export async function registerCustomerAuth(app: FastifyInstance, options: {
         let recoveryConflict = false, recoveryChanged = false;
         if (!link) {
           const current = await transaction.account.findUniqueOrThrow({ where: { id: account.id } });
+          assertAccountOpen(current);
           if (current.email !== identity.email) {
             recoveryChanged = true;
             const emailOwner = identity.mailboxAuthoritative ? await transaction.account.findUnique({ where: { email: identity.email } }) : null;
@@ -271,7 +274,7 @@ export async function registerCustomerAuth(app: FastifyInstance, options: {
       if (recoveryConflict) destination.pathname = "/account";
       destination.searchParams.set("google", recoveryConflict ? "recovery-conflict" : "connected");
     } catch (error) {
-      destination.searchParams.set("google", error instanceof AppError && error.code === "ACCOUNT_EXISTS" ? "link" : error instanceof AppError && error.code === "ACCOUNT_LINK_EMAIL" ? "link-mismatch" : error instanceof AppError && error.code === "ACCOUNT_LINK" ? "link-unavailable" : error instanceof AppError && error.code === "GOOGLE_EMAIL_CHALLENGE" ? "verify-email" : "error");
+      destination.searchParams.set("google", error instanceof AppError && error.code === "ACCOUNT_CLOSED" ? "account-closed" : error instanceof AppError && error.code === "ACCOUNT_EXISTS" ? "link" : error instanceof AppError && error.code === "ACCOUNT_LINK_EMAIL" ? "link-mismatch" : error instanceof AppError && error.code === "ACCOUNT_LINK" ? "link-unavailable" : error instanceof AppError && error.code === "GOOGLE_EMAIL_CHALLENGE" ? "verify-email" : "error");
     }
     return reply.redirect(destination.toString());
   });

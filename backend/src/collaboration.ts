@@ -67,7 +67,9 @@ export async function registerCollaboration(
         .strict()
         .parse(request.body);
       const message = await prisma.$transaction(async (tx) => {
-        const project = await projectFor(account, projectId(request), team, tx);
+        const id = projectId(request);
+        await tx.$queryRaw`SELECT "id" FROM "Project" WHERE "id" = ${id}::uuid FOR UPDATE`;
+        const project = await projectFor(account, id, team, tx);
         const existing = await tx.projectMessage.findUnique({
           where: { id: input.id },
         });
@@ -167,26 +169,31 @@ export async function registerCollaboration(
       .object({ id: z.uuid(), body: z.string().trim().min(1).max(5000) })
       .strict()
       .parse(request.body);
-    const project = await projectFor(account, projectId(request), true);
-    const note = await prisma.teamNote.upsert({
-      where: { id: input.id },
-      update: {},
-      create: {
-        ...input,
-        projectId: project.id,
-        authorName: accountLabel(account),
-      },
+    const note = await prisma.$transaction(async (tx) => {
+      const id = projectId(request);
+      await tx.$queryRaw`SELECT "id" FROM "Project" WHERE "id" = ${id}::uuid FOR UPDATE`;
+      const project = await projectFor(account, id, true, tx);
+      const saved = await tx.teamNote.upsert({
+        where: { id: input.id },
+        update: {},
+        create: {
+          ...input,
+          projectId: project.id,
+          authorName: accountLabel(account),
+        },
+      });
+      if (
+        saved.projectId !== project.id ||
+        saved.authorName !== accountLabel(account) ||
+        saved.body !== input.body
+      )
+        throw new AppError(
+          409,
+          "NOTE_ID_CONFLICT",
+          "Please refresh before saving this note.",
+        );
+      return saved;
     });
-    if (
-      note.projectId !== project.id ||
-      note.authorName !== accountLabel(account) ||
-      note.body !== input.body
-    )
-      throw new AppError(
-        409,
-        "NOTE_ID_CONFLICT",
-        "Please refresh before saving this note.",
-      );
     return reply.code(201).send({ id: note.id });
   });
   const taskFields = {

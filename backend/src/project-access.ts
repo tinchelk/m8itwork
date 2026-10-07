@@ -41,6 +41,20 @@ export function createProjectAccess(prisma: PrismaClient, env: Env) {
         "PROJECT_UNAVAILABLE",
         "This project isn't available to your account.",
       );
+    if (
+      tx !== prisma &&
+      (
+        await tx.account.findUnique({
+          where: { id: project.accountId },
+          select: { closedAt: true },
+        })
+      )?.closedAt
+    )
+      throw new AppError(
+        409,
+        "ACCOUNT_CLOSED",
+        "The customer's account is closed. This project is read-only.",
+      );
     return project;
   }
   async function touch(
@@ -51,7 +65,7 @@ export function createProjectAccess(prisma: PrismaClient, env: Env) {
   ) {
     if (project.version !== expected) throw projectConflict();
     const result = await tx.project.updateMany({
-      where: { id: project.id, version: expected },
+      where: { id: project.id, version: expected, account: { closedAt: null } },
       data: { ...data, version: { increment: 1 } },
     });
     if (result.count !== 1) throw projectConflict();

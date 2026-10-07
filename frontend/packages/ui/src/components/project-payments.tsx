@@ -26,8 +26,10 @@ export const isPaid = (m: PaymentMilestone, mode?: string) =>
   );
 export const paymentNeedsReview = (m: PaymentMilestone, mode?: string) =>
   Boolean(
-    m.disputed || m.refundedCents || m.paidCents > m.amountCents ||
-    (m.attempts?.[0] && m.attempts[0].mode !== mode),
+    m.disputed ||
+      m.refundedCents ||
+      m.paidCents > m.amountCents ||
+      (m.attempts?.[0] && m.attempts[0].mode !== mode),
   );
 export const requestedPayment = (project: Project) => {
   const proposal = project.proposals.find(
@@ -46,6 +48,7 @@ export function ProjectPayments({
   onError,
   returnStatus,
   saving,
+  readOnly = false,
 }: {
   project: Project;
   team: boolean;
@@ -54,6 +57,7 @@ export function ProjectPayments({
   onError: (reason: unknown) => void;
   returnStatus?: "returned" | "cancelled" | null;
   saving: boolean;
+  readOnly?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -70,6 +74,7 @@ export function ProjectPayments({
   useEffect(() => {
     if (
       checkedReturn.current ||
+      readOnly ||
       team ||
       returnStatus !== "returned" ||
       !project.billing?.enabled
@@ -83,7 +88,7 @@ export function ProjectPayments({
     void api(`${prefix}/${pending.id}/sync`, {})
       .then(() => callbacks.current.refresh())
       .catch((reason) => callbacks.current.onError(reason));
-  }, [team, returnStatus, project.billing, milestones, prefix]);
+  }, [team, returnStatus, project.billing, milestones, prefix, readOnly]);
   return (
     <section id="payments" className="portal-card portal-payments">
       <p className="portal-kicker">AGREED WORK, CLEAR PAYMENTS</p>
@@ -103,8 +108,9 @@ export function ProjectPayments({
       )}
       {!proposal ? (
         <p className="portal-empty">
-          Your scope and payment schedule follow our review. No payment is due
-          yet.
+          {readOnly
+            ? "No payment plan was saved."
+            : "Your scope and payment schedule follow our review. No payment is due yet."}
         </p>
       ) : (
         <>
@@ -114,7 +120,10 @@ export function ProjectPayments({
             {milestones.length === 1
               ? "Full payment upfront"
               : `${milestones.length} agreed installments`}
-            . Only requested installments can be paid.
+            .{" "}
+            {readOnly
+              ? "Retained payment history."
+              : "Only requested installments can be paid."}
           </p>
           {project.billing?.mode === "test" && (
             <p className="portal-notice">
@@ -190,101 +199,104 @@ export function ProjectPayments({
                   >
                     {status}
                   </span>
-                  <div className="payment-actions">
-                    {!team && ready && (
-                      <button
-                        className="button"
-                        disabled={busy || saving || !project.billing?.enabled}
-                        onClick={async () => {
-                          setBusy(true);
-                          setNotice(null);
-                          try {
-                            const result = await api<{
-                              url?: string;
-                              paid?: boolean;
-                            }>(`${prefix}/${milestone.id}/checkout`, {});
-                            if (result.url) window.location.assign(result.url);
-                            else {
-                              setNotice(
-                                "Stripe confirmed this payment. Updating your project…",
-                              );
-                              await refresh();
-                            }
-                          } catch (reason) {
-                            onError(reason);
-                          } finally {
-                            setBusy(false);
-                          }
-                        }}
-                      >
-                        {busy
-                          ? "Opening Checkout…"
-                          : `Pay ${milestone.label} with Stripe`}{" "}
-                        <span aria-hidden="true">↗</span>
-                      </button>
-                    )}
-                    {proposal.approvedAt &&
-                      milestone.releasedAt &&
-                      project.billing?.enabled && (
-                        <button
-                          className="portal-plain"
-                          disabled={busy || saving || Boolean(modeMismatch)}
-                          onClick={() =>
-                            void save(
-                              `${prefix}/${milestone.id}/sync`,
-                              {},
-                              "Payment status checked with Stripe.",
-                            )
-                          }
-                        >
-                          Check payment status
-                        </button>
-                      )}
-                    {team &&
-                      proposal.approvedAt &&
-                      !milestone.releasedAt &&
-                      milestones
-                        .slice(0, index)
-                        .every((m) => isPaid(m, project.billing?.mode)) &&
-                      {
-                        BEFORE_BUILD: ["APPROVED", "BUILDING"],
-                        BEFORE_VERIFY: ["BUILDING"],
-                        BEFORE_HANDOVER: ["VERIFYING"],
-                      }[milestone.dueWhen].includes(project.stage) && (
+                  {!readOnly && (
+                    <div className="payment-actions">
+                      {!team && ready && (
                         <button
                           className="button"
-                          disabled={busy || saving}
-                          onClick={() =>
-                            void save(
-                              `${prefix}/${milestone.id}/request`,
-                              { version: project.version },
-                              "Installment requested in the customer's workspace.",
-                            )
-                          }
+                          disabled={busy || saving || !project.billing?.enabled}
+                          onClick={async () => {
+                            setBusy(true);
+                            setNotice(null);
+                            try {
+                              const result = await api<{
+                                url?: string;
+                                paid?: boolean;
+                              }>(`${prefix}/${milestone.id}/checkout`, {});
+                              if (result.url)
+                                window.location.assign(result.url);
+                              else {
+                                setNotice(
+                                  "Stripe confirmed this payment. Updating your project…",
+                                );
+                                await refresh();
+                              }
+                            } catch (reason) {
+                              onError(reason);
+                            } finally {
+                              setBusy(false);
+                            }
+                          }}
                         >
-                          Request {milestone.label}
+                          {busy
+                            ? "Opening Checkout…"
+                            : `Pay ${milestone.label} with Stripe`}{" "}
+                          <span aria-hidden="true">↗</span>
                         </button>
                       )}
-                    {team &&
-                      milestone.releasedAt &&
-                      !milestone.paidCents &&
-                      project.billing?.enabled && (
-                        <button
-                          className="portal-plain"
-                          disabled={busy || saving || Boolean(modeMismatch)}
-                          onClick={() =>
-                            void save(
-                              `${prefix}/${milestone.id}/expire`,
-                              {},
-                              "Pending Checkout expired. Unpaid scope can be revised.",
-                            )
-                          }
-                        >
-                          Expire pending Checkout
-                        </button>
-                      )}
-                  </div>
-                  {team && project.billing?.enabled && (
+                      {proposal.approvedAt &&
+                        milestone.releasedAt &&
+                        project.billing?.enabled && (
+                          <button
+                            className="portal-plain"
+                            disabled={busy || saving || Boolean(modeMismatch)}
+                            onClick={() =>
+                              void save(
+                                `${prefix}/${milestone.id}/sync`,
+                                {},
+                                "Payment status checked with Stripe.",
+                              )
+                            }
+                          >
+                            Check payment status
+                          </button>
+                        )}
+                      {team &&
+                        proposal.approvedAt &&
+                        !milestone.releasedAt &&
+                        milestones
+                          .slice(0, index)
+                          .every((m) => isPaid(m, project.billing?.mode)) &&
+                        {
+                          BEFORE_BUILD: ["APPROVED", "BUILDING"],
+                          BEFORE_VERIFY: ["BUILDING"],
+                          BEFORE_HANDOVER: ["VERIFYING"],
+                        }[milestone.dueWhen].includes(project.stage) && (
+                          <button
+                            className="button"
+                            disabled={busy || saving}
+                            onClick={() =>
+                              void save(
+                                `${prefix}/${milestone.id}/request`,
+                                { version: project.version },
+                                "Installment requested in the customer's workspace.",
+                              )
+                            }
+                          >
+                            Request {milestone.label}
+                          </button>
+                        )}
+                      {team &&
+                        milestone.releasedAt &&
+                        !milestone.paidCents &&
+                        project.billing?.enabled && (
+                          <button
+                            className="portal-plain"
+                            disabled={busy || saving || Boolean(modeMismatch)}
+                            onClick={() =>
+                              void save(
+                                `${prefix}/${milestone.id}/expire`,
+                                {},
+                                "Pending Checkout expired. Unpaid scope can be revised.",
+                              )
+                            }
+                          >
+                            Expire pending Checkout
+                          </button>
+                        )}
+                    </div>
+                  )}
+                  {!readOnly && team && project.billing?.enabled && (
                     <details>
                       <summary>Recover an unfinished Checkout</summary>
                       <form
@@ -304,7 +316,9 @@ export function ProjectPayments({
                         <label>
                           Stripe Checkout session ID
                           <input
-                            name="sessionId" autoComplete="off" spellCheck={false}
+                            name="sessionId"
+                            autoComplete="off"
+                            spellCheck={false}
                             pattern="cs_(test_|live_)?[A-Za-z0-9_]{8,200}"
                             required
                             placeholder="cs_test_…"
@@ -323,7 +337,7 @@ export function ProjectPayments({
               );
             })}
           </ol>
-          {!proposal.approvedAt && (
+          {!readOnly && !proposal.approvedAt && (
             <p className="portal-muted">
               Approve this proposal’s scope, cost, and schedule before any
               payment is requested.

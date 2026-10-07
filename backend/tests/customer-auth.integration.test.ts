@@ -315,6 +315,44 @@ describe.skipIf(!dbUrl)("email/Google customer accounts", () => {
     expect(denied.headers.location).toContain("github=identity");
     expect((await prisma.account.findUniqueOrThrow({ where: { id: other.id } })).githubId).toBeNull();
   });
+  it("does not reopen closed identities through signup, recovery, Google or GitHub", async () => {
+    const owner = await account(), cookie = await login(owner.email!);
+    googleIdentity = { id: randomUUID(), email: owner.email!, name: "Closed Builder", mailboxAuthoritative: true };
+    githubIdentity = { id: 948000000 + Math.floor(Math.random() * 1000000), login: "closed-builder", name: "Closed Builder" };
+    await prisma.account.update({ where: { id: owner.id }, data: { googleId: googleIdentity.id, githubId: String(githubIdentity.id) } });
+    await post("/v1/auth/password-reset/request", { email: owner.email }); const oldReset = token(mail.at(-1)!);
+    expect((await post("/v1/auth/account/close", { accountId: owner.id, requestId: randomUUID(), confirmation: "CLOSE" }, cookie)).statusCode).toBe(200);
+    const before = mail.length;
+    expect((await post("/v1/auth/register", { email: owner.email, password: "correct fixture password", displayName: "Builder", consent: true })).statusCode).toBe(202);
+    expect((await post("/v1/auth/password-reset/request", { email: owner.email })).statusCode).toBe(202);
+    expect(mail).toHaveLength(before);
+    expect((await post("/v1/auth/password-reset/confirm", { token: oldReset, password: "new fixture password" })).statusCode).toBe(400);
+    expect((await post("/v1/auth/login", { email: owner.email, password: "correct fixture password" })).statusCode).toBe(401);
+    const start = await googleStart();
+    const google = await app.inject({ url: `/v1/auth/google/callback?state=${start.url.searchParams.get("state")}&code=fixture`, headers: { cookie: start.cookie } });
+    expect(google.headers.location).toContain("google=account-closed");
+    const ghStart = await app.inject({ url: "/v1/github/connect?flow=login" }); const ghCookies = cookies(ghStart);
+    reviews.push(hash(ghStart.cookies.find(c => c.name === "m8_review_session")!.value));
+    const github = await app.inject({ url: `/v1/github/callback?state=${new URL(ghStart.headers.location!).searchParams.get("state")}&code=fixture`, headers: { cookie: ghCookies } });
+    expect(github.headers.location).toContain("github=account-closed");
+    expect(await prisma.accountSession.count({ where: { accountId: owner.id } })).toBe(0);
+    expect(await prisma.account.count({ where: { email: owner.email } })).toBe(1);
+  });
+  it("prevents an in-flight Google callback from signing in after closure", async () => {
+    const owner = await account(), cookie = await login(owner.email!);
+    googleIdentity = { id: randomUUID(), email: owner.email!, name: "Builder", mailboxAuthoritative: true };
+    await prisma.account.update({ where: { id: owner.id }, data: { googleId: googleIdentity.id } });
+    const start = await googleStart(); let release!: () => void, enter!: () => void;
+    const entered = new Promise<void>(resolve => { enter = resolve; }); const gate = new Promise<void>(resolve => { release = resolve; });
+    googleExchangeHook = async () => { enter(); await gate; };
+    try {
+      const callback = app.inject({ url: `/v1/auth/google/callback?state=${start.url.searchParams.get("state")}&code=fixture`, headers: { cookie: start.cookie } });
+      await entered;
+      expect((await post("/v1/auth/account/close", { accountId: owner.id, requestId: randomUUID(), confirmation: "CLOSE" }, cookie)).statusCode).toBe(200);
+      release(); expect((await callback).headers.location).toContain("google=account-closed");
+      expect(await prisma.accountSession.count({ where: { accountId: owner.id } })).toBe(0);
+    } finally { release(); googleExchangeHook = async () => {}; }
+  });
   it("rejects weak passwords, missing acknowledgments, and foreign-origin auth writes", async () => {
     const body = { email: `${randomUUID()}@example.invalid`, password: "short", displayName: "Builder", consent: true };
     expect((await post("/v1/auth/register", body)).statusCode).toBe(400);

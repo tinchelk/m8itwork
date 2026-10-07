@@ -14,6 +14,7 @@ import {
   ACCOUNT_COOKIE,
   ACCOUNT_TTL,
   accountFromRequest,
+  assertAccountOpen,
   cookieHash,
   isOperator,
   requireAccount,
@@ -27,6 +28,7 @@ import { registerWorkspace } from "./workspace.js";
 import { StripeProvider, type PaymentProvider } from "./stripe-provider.js";
 import { StripeBillingProvider, type BillingProvider } from "./billing-provider.js";
 import { registerBilling } from "./billing.js";
+import { registerAccountClosure } from "./account-closure.js";
 import { clientRateLimitKey } from "./proxy-trust.js";
 
 declare module "fastify" {
@@ -231,6 +233,7 @@ export async function buildApp(
   const connectEnabled = Boolean(env.GITHUB_CLIENT_ID);
   await registerCustomerAuth(app, { prisma, env, session, email: accountEmail,
     google: options.googleProvider ?? new GoogleOidcProvider(env), rateLimiting: options.rateLimiting ?? true });
+  await registerAccountClosure(app, prisma, env);
   const installUrl = connectEnabled
     ? `https://github.com/apps/${encodeURIComponent(env.GITHUB_APP_SLUG)}/installations/new`
     : null;
@@ -523,6 +526,13 @@ export async function buildApp(
           ? secret()
           : null;
       await prisma.$transaction(async (transaction) => {
+        if (accountToken) {
+          const registered = await transaction.account.findUnique({ where: { githubId: String(user.id) } });
+          if (registered) {
+            await lockAccount(transaction, registered.id);
+            assertAccountOpen(await transaction.account.findUniqueOrThrow({ where: { id: registered.id } }));
+          }
+        }
         if (reconnectAccount) {
           await lockAccount(transaction, reconnectAccount.id);
           const activeSession = await transaction.accountSession.findUnique({ where: { id: cookieHash(request) ?? "" } });
@@ -584,6 +594,7 @@ export async function buildApp(
             update: { githubLogin: user.login, displayName: user.name ?? null },
           });
           await lockAccount(transaction, account.id);
+          assertAccountOpen(await transaction.account.findUniqueOrThrow({ where: { id: account.id } }));
           const previous = [
             cookieHash(request),
             current.accountSessionId,
@@ -606,7 +617,9 @@ export async function buildApp(
     } catch (error) {
       destination.searchParams.set(
         "github",
-        error instanceof AppError && error.code === "GITHUB_IDENTITY"
+        error instanceof AppError && error.code === "ACCOUNT_CLOSED"
+          ? "account-closed"
+          : error instanceof AppError && error.code === "GITHUB_IDENTITY"
           ? "identity"
           : current.oauthPurpose === "repositories" && error instanceof AppError && error.code === "SIGN_IN_REQUIRED"
             ? "signin-required"

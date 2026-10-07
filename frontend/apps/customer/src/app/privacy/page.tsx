@@ -25,19 +25,20 @@ export default function Privacy() {
         </p>
         <h2>Your customer workspace</h2>
         <p>
-          Email signup stores your name, email, verification status, and a salted
-          password hash. Passwords and account-link tokens are not stored as plain
-          text or in browser drafts. Google sign-in uses your verified email,
-          profile name, and Google account ID. GitHub sign-in uses GitHub’s numeric
-          user ID, username, and profile name. Repository connection is optional
-          after creating an account. We store your projects, contact email,
-          issues, suggestions, requirements, repository summaries, proposals,
-          approvals, conversations, delivery checklists, verification evidence,
-          and progress updates to review and deliver the agreed work. The team
-          can also record internal notes, which are visible only to authorized
-          operators. Each customer can access their own projects; authorized
-          project-team operators can review them and publish updates. Reference
-          links are stored without being fetched automatically.
+          Email signup stores your name, email, verification status, and a
+          salted password hash. Passwords and account-link tokens are not stored
+          as plain text or in browser drafts. Google sign-in uses your verified
+          email, profile name, and Google account ID. GitHub sign-in uses
+          GitHub’s numeric user ID, username, and profile name. Repository
+          connection is optional after creating an account. We store your
+          projects, contact email, issues, suggestions, requirements, repository
+          summaries, proposals, approvals, conversations, delivery checklists,
+          verification evidence, and progress updates to review and deliver the
+          agreed work. The team can also record internal notes, which are
+          visible only to authorized operators. Each customer can access their
+          own projects; authorized project-team operators can review them and
+          publish updates. Reference links are stored without being fetched
+          automatically.
         </p>
         <p>
           Resend delivers account verification and password-recovery messages;
@@ -46,7 +47,8 @@ export default function Privacy() {
           Password-reset links expire after 30 minutes and verification links
           after 24 hours. Completing a reset revokes all your account sessions
           and repository credentials held by this service. Google receives only
-          an identity sign-in request; we do not request access to your Gmail or Drive.
+          an identity sign-in request; we do not request access to your Gmail or
+          Drive.
         </p>
         <h2>Payments</h2>
         <p>
@@ -55,9 +57,9 @@ export default function Privacy() {
           project and installment names, agreed amount and currency, and
           identifiers linking the payment to your project. We do not receive or
           store your full card number. We retain the agreed payment schedule,
-          Stripe transaction identifiers, payment status, receipt and invoice links, and
-          refund or dispute information to reconcile payments and deliver work.
-          Stripe processes payment information under its own{" "}
+          Stripe transaction identifiers, payment status, receipt and invoice
+          links, and refund or dispute information to reconcile payments and
+          deliver work. Stripe processes payment information under its own{" "}
           <a
             href="https://stripe.com/privacy"
             target="_blank"
@@ -86,15 +88,15 @@ export default function Privacy() {
         </p>
         <h2>AI-assisted review</h2>
         <p>
-          When you send a new repository request or separately allow AI review in
-          your dashboard, you authorize us to send a bounded source sample and
-          your project requests to OpenAI or Anthropic through a coding-agent
-          subscription on the operator’s machine. Up to 40 eligible files from
-          your saved commit are sampled, with limits on file size and total
-          content. Sensitive and instruction files are excluded and recognizable
-          credentials are redacted; this cannot guarantee that all secrets are
-          detected. Do not commit secrets or share customer data in your repo.
-          Repository code, dependencies, and tests are not executed.
+          When you send a new repository request or separately allow AI review
+          in your dashboard, you authorize us to send a bounded source sample
+          and your project requests to OpenAI or Anthropic through a
+          coding-agent subscription on the operator’s machine. Up to 40 eligible
+          files from your saved commit are sampled, with limits on file size and
+          total content. Sensitive and instruction files are excluded and
+          recognizable credentials are redacted; this cannot guarantee that all
+          secrets are detected. Do not commit secrets or share customer data in
+          your repo. Repository code, dependencies, and tests are not executed.
         </p>
         <p>
           Source passes temporarily through our server and local worker; we do
@@ -103,13 +105,14 @@ export default function Privacy() {
           request snapshot, operator review prompts, and visible agent replies
           and progress messages with your project. These review records are
           accessible only to authorized operators. Internal model reasoning and
-          raw provider transcripts are not retained by our application. Follow-up
-          questions use the same read-only review boundaries. The operator checks and
-          edits the draft before publishing a review or quote. Provider processing
-          and retention follow the subscription account’s settings and the
-          provider’s policies. You can withdraw permission in your dashboard to
-          stop queued and running reviews; information already sent to a provider
-          cannot be recalled. Manual discussion remains available.
+          raw provider transcripts are not retained by our application.
+          Follow-up questions use the same read-only review boundaries. The
+          operator checks and edits the draft before publishing a review or
+          quote. Provider processing and retention follow the subscription
+          account’s settings and the provider’s policies. You can withdraw
+          permission in your dashboard to stop queued and running reviews;
+          information already sent to a provider cannot be recalled. Manual
+          discussion remains available.
         </p>
         <h2>Private GitHub access</h2>
         <p>
@@ -124,6 +127,20 @@ export default function Privacy() {
         </p>
         <h2>Browser sessions and retention</h2>
         <p>
+          You can close your account in Account settings. Closing signs out all
+          devices, retires repository credentials and recovery links held by
+          this service, withdraws unagreed requests and stops queued or running
+          reviews. Agreed work, pending payments or disputes need a team check
+          first. Project and financial records remain with the team. Closing
+          does not delete GitHub repositories, uninstall the GitHub App, refund
+          payments or remove payment methods stored by Stripe; you can remove
+          saved cards before closing. Contact hello@m8itwork.com about retained
+          records or returning to the service. A hashed closure receipt is valid
+          for 30 minutes to confirm an interrupted request; expired receipts are
+          removed during operational cleanup. Its short-lived random identifier
+          may remain in this browser tab for that period.
+        </p>
+        <p>
           An essential, HTTP-only cookie connects your browser to its inspection
           for 24 hours. Expired sessions and unsubmitted inspections are removed
           by the operator’s cleanup job. A separate essential, HTTP-only account
@@ -134,11 +151,13 @@ export default function Privacy() {
           24 hours to preserve it when you connect GitHub; a successful
           submission clears it. Submitted briefs and workspace records are
           retained while discussing or delivering the project. To request
-          deletion, email <a href="mailto:hello@m8itwork.com">hello@m8itwork.com</a>, or use
+          deletion, email{" "}
+          <a href="mailto:hello@m8itwork.com">hello@m8itwork.com</a>, or use
           your project conversation. Deletion requests are reviewed
           individually; agreement and transaction records may be retained to
           reconcile payments, accounting, refunds, or disputes. Deleting this
-          service’s records does not delete records held by Stripe, GitHub, OpenAI or Anthropic.
+          service’s records does not delete records held by Stripe, GitHub,
+          OpenAI or Anthropic.
         </p>
         <p>
           Unsaved project, request, conversation, and operator form drafts may

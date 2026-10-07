@@ -24,6 +24,7 @@ try {
   });
   await prisma.accountSession.deleteMany({ where: { expiresAt: { lt: now } } });
   await prisma.accountToken.deleteMany({ where: { expiresAt: { lt: now } } });
+  await prisma.accountClosure.deleteMany({ where: { expiresAt: { lt: now } } });
   await prisma.authThrottle.deleteMany({ where: { expiresAt: { lt: now } } });
   console.log(
     `Removed ${result.count} expired browser sessions. Submitted briefs are retained.`,

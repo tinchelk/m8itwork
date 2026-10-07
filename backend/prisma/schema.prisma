@@ -37,13 +37,25 @@ model Account {
   passwordHash String?
   googleId    String?          @unique
   displayName String?
+  closedAt DateTime?
   sessions    AccountSession[]
   projects    Project[]
   inspections Inspection[]
   tokens      AccountToken[]
   reviewWorkers ReviewWorker[]
   billingCustomers BillingCustomer[]
+  closure AccountClosure?
   createdAt   DateTime         @default(now())
+}
+
+model AccountClosure {
+  id String @id
+  accountId String @unique @db.Uuid
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
 }
 
 model BillingCustomer {
