@@ -3,7 +3,7 @@ import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
-import { PrismaClient, type ReviewSession } from "@prisma/client";
+import { PrismaClient, type Account, type ReviewSession } from "@prisma/client";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { z, ZodError } from "zod";
 import { isAppOrigin, loadEnv, type Env } from "./config.js";
@@ -210,7 +210,13 @@ export async function buildApp(
     });
     return result;
   }
-  function userToken(current: ReviewSession): string | undefined {
+  function userToken(current: ReviewSession, request: FastifyRequest, account: Account | null): string | undefined {
+    // A signed-in connection belongs to one account session. Anonymous intake
+    // credentials cannot be adopted merely by presenting a different login cookie.
+    if (current.accountSessionId
+      ? !account || current.accountSessionId !== cookieHash(request)
+      : account !== null)
+      return undefined;
     if (
       !current.tokenEncrypted ||
       !current.tokenExpiresAt ||
@@ -232,7 +238,7 @@ export async function buildApp(
   app.get("/v1/session", async (request, reply) => {
     const current = await session(request, reply);
     const account = await accountFromRequest(prisma, request);
-    const token = userToken(current);
+    const token = userToken(current, request, account);
     const latest = current.selectedInspectionId
       ? await prisma.inspection.findFirst({
           where: {
@@ -246,7 +252,9 @@ export async function buildApp(
       repositories: { name: string; url: string; private: boolean }[];
       truncated: boolean;
     } = { repositories: [], truncated: false };
-    let connectionError: string | null = null;
+    let connectionError: string | null = current.tokenEncrypted && !token
+      ? "Connect GitHub again to choose your repositories. Your request is still here."
+      : null;
     if (token)
       try {
         connection = await github.repositories(token);
@@ -348,73 +356,93 @@ export async function buildApp(
     },
     async (request, reply) => {
       const query = z
-        .object({ flow: z.enum(["login", "workspace", "admin"]).optional() })
+        .object({ flow: z.enum(["login", "workspace", "repositories", "admin"]).optional() })
         .parse(request.query);
-      const account =
-        query.flow === "login" || query.flow === "admin"
-          ? null
-          : await accountFromRequest(prisma, request);
-      if (query.flow === "workspace" && !account)
-        await requireAccount(prisma, request);
-      if (!connectEnabled)
-        throw new AppError(
-          503,
-          "GITHUB_NOT_CONFIGURED",
-          "GitHub connection is being set up. Please try again later or contact hello@m8itwork.com.",
-        );
-      const details = z
-        .object({
-          permissions: z.record(z.string(), z.string()),
-          client_id: z.string().optional(),
-        })
-        .parse(
-          await github.api(`/apps/${encodeURIComponent(env.GITHUB_APP_SLUG)}`),
-        );
-      if (
-        details.permissions.contents !== "read" ||
-        Object.values(details.permissions).some(
-          (permission) => permission !== "read",
-        ) ||
-        (details.client_id && details.client_id !== env.GITHUB_CLIENT_ID)
-      ) {
-        throw new AppError(
-          503,
-          "GITHUB_PERMISSIONS",
-          "This GitHub App must be configured with read-only repository contents access before connecting.",
-        );
+      try {
+        const account =
+          query.flow === "login" || query.flow === "admin"
+            ? null
+            : query.flow === "workspace" || query.flow === "repositories"
+              ? await requireAccount(prisma, request)
+              : await accountFromRequest(prisma, request);
+        if (!connectEnabled)
+          throw new AppError(
+            503,
+            "GITHUB_NOT_CONFIGURED",
+            "GitHub connection is being set up. Please try again later or contact hello@m8itwork.com.",
+          );
+        const details = z
+          .object({
+            permissions: z.record(z.string(), z.string()),
+            client_id: z.string().optional(),
+          })
+          .parse(
+            await github.api(`/apps/${encodeURIComponent(env.GITHUB_APP_SLUG)}`),
+          );
+        if (
+          details.permissions.contents !== "read" ||
+          Object.values(details.permissions).some(
+            (permission) => permission !== "read",
+          ) ||
+          (details.client_id && details.client_id !== env.GITHUB_CLIENT_ID)
+        ) {
+          throw new AppError(
+            503,
+            "GITHUB_PERMISSIONS",
+            "This GitHub App must be configured with read-only repository contents access before connecting.",
+          );
+        }
+        const current = await session(request, reply);
+        const state = secret();
+        const verifier = secret();
+        await prisma.$transaction(async transaction => {
+          if (query.flow === "repositories") {
+            await lockAccount(transaction, account!.id);
+            const active = await transaction.accountSession.findUnique({ where: { id: cookieHash(request)! } });
+            if (!active || active.accountId !== account!.id || active.expiresAt <= new Date())
+              throw new AppError(401, "SIGN_IN_REQUIRED", "Sign in again to connect GitHub.");
+          }
+          await transaction.reviewSession.update({
+            where: { id: current.id },
+            data: {
+              oauthStateHash: hash(state),
+              oauthAttemptId: hash(state),
+              oauthPurpose: query.flow ?? "intake",
+              oauthAccountId: account?.id ?? null,
+              oauthExpiresAt: new Date(Date.now() + 10 * 60_000),
+              verifierEncrypted: encrypt(verifier, env.TOKEN_ENCRYPTION_KEY),
+              ...(query.flow === "repositories" ? {
+                accountSessionId: cookieHash(request)!,
+                ...(current.accountSessionId !== cookieHash(request) ? {
+                  selectedInspectionId: null, tokenEncrypted: null, tokenExpiresAt: null, githubLogin: null,
+                } : {}),
+              } : {}),
+            },
+          });
+        });
+        const url = new URL("https://github.com/login/oauth/authorize");
+        url.search = new URLSearchParams({
+          client_id: env.GITHUB_CLIENT_ID,
+          redirect_uri: `${env.PUBLIC_API_URL}/v1/github/callback`,
+          state,
+          code_challenge: createHash("sha256")
+            .update(verifier)
+            .digest("base64url"),
+          code_challenge_method: "S256",
+          ...(query.flow !== "repositories" && account?.githubLogin ? { login: account.githubLogin } : {}),
+        }).toString();
+        return reply.redirect(url.toString());
+      } catch (error) {
+        if (query.flow === "repositories" && error instanceof AppError && error.code === "SIGN_IN_REQUIRED")
+          return reply.redirect(new URL("/dashboard?github=signin-required", env.FRONTEND_ORIGIN).toString());
+        throw error;
       }
-      const current = await session(request, reply);
-      const state = secret();
-      const verifier = secret();
-      await prisma.reviewSession.update({
-        where: { id: current.id },
-        data: {
-          oauthStateHash: hash(state),
-          oauthAttemptId: hash(state),
-          oauthPurpose: query.flow ?? "intake",
-          oauthAccountId: account?.id ?? null,
-          oauthExpiresAt: new Date(Date.now() + 10 * 60_000),
-          verifierEncrypted: encrypt(verifier, env.TOKEN_ENCRYPTION_KEY),
-        },
-      });
-      const url = new URL("https://github.com/login/oauth/authorize");
-      url.search = new URLSearchParams({
-        client_id: env.GITHUB_CLIENT_ID,
-        redirect_uri: `${env.PUBLIC_API_URL}/v1/github/callback`,
-        state,
-        code_challenge: createHash("sha256")
-          .update(verifier)
-          .digest("base64url"),
-        code_challenge_method: "S256",
-        ...(account?.githubLogin ? { login: account.githubLogin } : {}),
-      }).toString();
-      return reply.redirect(url.toString());
     },
   );
   app.get("/v1/github/callback", async (request, reply) => {
     const current = await session(request, reply);
     const workspaceFlow =
-      current.oauthPurpose === "login" || current.oauthPurpose === "workspace";
+      current.oauthPurpose === "login" || current.oauthPurpose === "workspace" || current.oauthPurpose === "repositories";
     const destination = new URL(
       current.oauthPurpose === "admin" ? "/" : workspaceFlow ? "/dashboard" : "/#review",
       current.oauthPurpose === "admin" ? env.ADMIN_ORIGIN : env.FRONTEND_ORIGIN,
@@ -428,7 +456,7 @@ export async function buildApp(
         .parse(request.query);
       if (
         !connectEnabled ||
-        !["login", "workspace", "admin", "intake"].includes(current.oauthPurpose ?? "intake") ||
+        !["login", "workspace", "repositories", "admin", "intake"].includes(current.oauthPurpose ?? "intake") ||
         !current.verifierEncrypted ||
         !current.oauthStateHash ||
         current.oauthStateHash !== hash(query.state)
@@ -473,10 +501,13 @@ export async function buildApp(
       const reconnectAccount = current.oauthAccountId
         ? await requireAccount(prisma, request)
         : null;
+      const repositoriesFlow = current.oauthPurpose === "repositories";
+      if (repositoriesFlow && (!reconnectAccount || current.accountSessionId !== cookieHash(request)))
+        throw new AppError(401, "SIGN_IN_REQUIRED", "Sign in again to connect GitHub.");
       if (
         reconnectAccount &&
         (reconnectAccount.id !== current.oauthAccountId ||
-          (reconnectAccount.githubId !== null && reconnectAccount.githubId !== String(user.id)))
+          (!repositoriesFlow && reconnectAccount.githubId !== null && reconnectAccount.githubId !== String(user.id)))
       ) {
         throw new AppError(
           403,
@@ -494,16 +525,21 @@ export async function buildApp(
           const activeSession = await transaction.accountSession.findUnique({ where: { id: cookieHash(request) ?? "" } });
           if (!activeSession || activeSession.accountId !== reconnectAccount.id || activeSession.expiresAt <= new Date())
             throw new AppError(401, "SIGN_IN_REQUIRED", "Sign in again to connect GitHub.");
-          const registered = await transaction.account.findUnique({ where: { githubId: String(user.id) } });
-          const latest = await transaction.account.findUniqueOrThrow({ where: { id: reconnectAccount.id } });
-          if ((registered && registered.id !== reconnectAccount.id) || (latest.githubId && latest.githubId !== String(user.id)))
-            throw new AppError(403, "GITHUB_IDENTITY", "This GitHub account is already linked to another account. Sign in with that account to continue.");
-          await transaction.account.update({ where: { id: reconnectAccount.id }, data: { githubId: String(user.id), githubLogin: user.login } });
+          if (!repositoriesFlow) {
+            const registered = await transaction.account.findUnique({ where: { githubId: String(user.id) } });
+            const latest = await transaction.account.findUniqueOrThrow({ where: { id: reconnectAccount.id } });
+            if ((registered && registered.id !== reconnectAccount.id) || (latest.githubId && latest.githubId !== String(user.id)))
+              throw new AppError(403, "GITHUB_IDENTITY", "This GitHub account is already linked to another account. Sign in with that account to continue.");
+            await transaction.account.update({ where: { id: reconnectAccount.id }, data: { githubId: String(user.id), githubLogin: user.login } });
+          }
         }
         const connected = await transaction.reviewSession.updateMany({
           where: {
             id: current.id,
             oauthAttemptId: hash(query.state),
+            oauthPurpose: current.oauthPurpose,
+            oauthAccountId: current.oauthAccountId,
+            ...(repositoriesFlow ? { accountSessionId: cookieHash(request)! } : {}),
             expiresAt: { gt: new Date() },
           },
           data: {
@@ -516,6 +552,7 @@ export async function buildApp(
                   accountSessionId: hash(accountToken),
                 }
               : {}),
+            ...(reconnectAccount ? { selectedInspectionId: null, accountSessionId: cookieHash(request)! } : {}),
             tokenEncrypted: encrypt(
               result.access_token,
               env.TOKEN_ENCRYPTION_KEY,
@@ -568,6 +605,8 @@ export async function buildApp(
         "github",
         error instanceof AppError && error.code === "GITHUB_IDENTITY"
           ? "identity"
+          : current.oauthPurpose === "repositories" && error instanceof AppError && error.code === "SIGN_IN_REQUIRED"
+            ? "signin-required"
           : "error",
       );
     }
@@ -608,9 +647,12 @@ export async function buildApp(
         .parse(request.body);
       const current = await session(request, reply);
       const account = await accountFromRequest(prisma, request);
+      const token = userToken(current, request, account);
+      if (current.tokenEncrypted && !token)
+        throw new AppError(401, "GITHUB_RECONNECT", "Connect GitHub again to inspect your repository. Your request is still here.");
       const report = await github.inspect(
         input.repositoryUrl,
-        userToken(current),
+        token,
       );
       const inspection = await prisma.$transaction(async (transaction) => {
         // Keep the owner captured before provider work; discard results after

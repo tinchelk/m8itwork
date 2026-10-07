@@ -182,8 +182,10 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
           setError("GitHub authorization wasn’t completed. Please try again.");
         if (params.get("github") === "identity")
           setError(
-            "Use the GitHub identity already linked to this account, or one not attached to another m8itwork account.",
+            "GitHub sign-in linking couldn’t be completed. You can still share repositories with this account using Connect GitHub below.",
           );
+        if (!result.account && params.get("github") === "signin-required")
+          setError("Your session expired. Sign in again with the same account to return to your saved request, then connect GitHub.");
         if (params.get("google") === "error") setError("Google sign-in wasn’t completed. Please try again.");
         if (params.get("google") === "link") setError("That email already belongs to an account. Sign in with your existing method, then connect Google from Account settings.");
         if (params.get("google") === "verify-email") setError("Create and verify an email account first, then connect Google from Account settings. This Google account cannot confirm current ownership of its email address.");
@@ -196,13 +198,15 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
         setProjects(list.projects);
         setListLoaded(true);
         const startAfterSignin = !teamView && consumeStartProjectIntent();
-        if (!teamView && (startAfterSignin || params.get("start") === "1" || (params.has("github") && consumeNewProjectReturn(result.account.id)))) {
+        const newProjectReturn = !teamView && consumeNewProjectReturn(result.account.id);
+        const projectReturn = !teamView ? consumeProjectConnectReturn(result.account.id) : null;
+        if (!teamView && (startAfterSignin || params.get("start") === "1" || newProjectReturn)) {
           setCreating(true);
           remember(null);
           requestAnimationFrame(() => contentTitle.current?.focus());
           return;
         }
-        const selected = params.get("project") ?? (!teamView && params.has("github") ? consumeProjectConnectReturn(result.account.id) : null);
+        const selected = params.get("project") ?? projectReturn;
         const first = list.projects.find((item) => item.id === selected);
         if (first) {
           const [detail, repoConnection] = await Promise.all([
@@ -275,6 +279,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
   async function refresh() {
     setBusy(true);
     setError(null);
+    setNotice("Refreshing workspace…");
     try {
       await refreshList(team);
       if (project) {
@@ -284,8 +289,14 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
         ]);
         setProject(detail);
         setConnection(repoConnection);
-      }
+        setNotice(repoConnection
+          ? repoConnection.connectionError || (repoConnection.githubLogin
+            ? "Repository list refreshed."
+            : "GitHub isn’t connected yet. Use Connect GitHub to authorize repository access.")
+          : "Project refreshed.");
+      } else setNotice("Dashboard refreshed.");
     } catch (reason) {
+      setNotice(null);
       failure(reason);
     } finally {
       setBusy(false);
@@ -762,7 +773,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                         <h3>Repository access</h3>
                         <p className="portal-muted">{connection?.githubLogin && !connection.connectionError ? `Connected as @${connection.githubLogin}.` : "Reconnect GitHub so we can review your saved repository. Your project and saved commit stay the same."}</p>
                         {connection?.connectionError && <p className="portal-notice">{connection.connectionError}</p>}
-                        {connection?.connectEnabled && <div className="portal-connection-actions"><a className="portal-link-button" href={`${API}/v1/github/connect?flow=workspace`} onClick={() => markProjectConnectReturn(auth.account!.id, project.id)}>{connection.githubLogin ? "Reconnect GitHub" : "Connect GitHub"} ↗</a><button className="portal-plain" disabled={busy} onClick={refresh}>Refresh connection</button></div>}
+                        {connection?.connectEnabled && <div className="portal-connection-actions"><a className="portal-link-button" href={`${API}/v1/github/connect?flow=repositories`} onClick={() => markProjectConnectReturn(auth.account!.id, project.id)}>{connection.githubLogin ? "Reconnect GitHub" : "Connect GitHub"} ↗</a><button className="portal-plain" disabled={busy} onClick={refresh}>Refresh connection</button></div>}
                       </div>}
                       {project.stage === "DRAFT" && !team && (
                         <div className="portal-connect">
@@ -791,7 +802,8 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                               <div className="portal-connection-actions">
                                 <a
                                   className="portal-link-button"
-                                  href={`${API}/v1/github/connect?flow=workspace`}
+                                  href={`${API}/v1/github/connect?flow=repositories`}
+                                  onClick={() => markProjectConnectReturn(auth.account!.id, project.id)}
                                 >
                                   {connection.githubLogin
                                     ? "Reconnect GitHub"

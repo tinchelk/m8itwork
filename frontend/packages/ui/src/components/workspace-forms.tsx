@@ -27,6 +27,7 @@ export function NewProjectForm({
   const [connection, setConnection] = useState<Connection | null>(null);
   const [loading, setLoading] = useState(true);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const draft = useFormDraft(formRef, accountId, "new-project-v2", connection);
@@ -47,12 +48,19 @@ export function NewProjectForm({
     draft.capture();
     setLoading(true);
     setConnectionError(null);
+    setRefreshNotice("Checking GitHub connection…");
     try {
       const result = await api<Connection>("/v1/session");
       setConnection(result);
       setConnectionError(result.connectionError);
+      setRefreshNotice(result.connectionError ? null : result.githubLogin
+        ? "Repository list refreshed."
+        : result.connectEnabled
+          ? "GitHub isn’t connected yet. Use Connect GitHub to authorize repository access."
+          : "GitHub connection is being set up. Please try again later.");
     } catch (error) {
       setConnectionError((error as Error).message);
+      setRefreshNotice(null);
     } finally { setLoading(false); }
   }
   function connect() {
@@ -112,19 +120,19 @@ export function NewProjectForm({
       <input type="hidden" name="draftRequestId" />
       <div className="project-repository-step">
         <p className="portal-kicker">01 / YOUR REPOSITORY</p>
-        {loading ? <p className="portal-muted" role="status">Loading GitHub connection…</p> : null}
+        {loading || refreshNotice ? <p className="portal-muted" role="status">{refreshNotice || "Loading GitHub connection…"}</p> : null}
         {connected ? (
           <p className="portal-muted">Connected as <strong>@{connection!.githubLogin}</strong></p>
         ) : null}
         {!loading && (!connected || connectionError) ? (
-          connection?.connectEnabled ? <a className="button outline" href={`${API}/v1/github/connect?flow=workspace`} onClick={connect}>
+          connection?.connectEnabled ? <a className="button outline" href={`${API}/v1/github/connect?flow=repositories`} onClick={connect}>
             {connected ? "Reconnect GitHub" : "Connect GitHub"} <span aria-hidden="true">↗</span>
           </a> : connection ? <p className="portal-notice">GitHub connection is being set up. Please try again later.</p> : null
         ) : null}
         {!connected ? <p className="portal-muted">Read-only access. You choose which repositories to share.</p> : null}
         {connectionError ? <p className="portal-error" role="alert">{connectionError}</p> : null}
         {connected && !loading && !connection!.repositories.length && !connectionError ? <p className="portal-notice">No repositories shared yet. Choose your app in GitHub, then refresh below.</p> : null}
-        <div>
+        {connected && Boolean(connection?.repositories.length) ? <div>
           <label htmlFor="project-repository">GitHub repository</label>
           <select id="project-repository" name="repositoryUrl" defaultValue="" required={!connection?.truncated} disabled={busy || !ready || !connection?.repositories.length} onChange={event => {
             const link = event.currentTarget.form?.elements.namedItem("repositoryLink") as HTMLInputElement | null;
@@ -134,12 +142,12 @@ export function NewProjectForm({
             <option value="">Choose a repository</option>
             {connection?.repositories.map(repo => <option key={repo.name} value={repo.url}>{repo.name}{repo.private ? " · private" : ""}</option>)}
           </select>
-        </div>
+        </div> : null}
         {connected ? <div className="project-repository-actions">
           {connection?.installUrl ? <a href={connection.installUrl} target="_blank" rel="noopener noreferrer" onClick={draft.capture}>Choose repositories in GitHub ↗</a> : null}
           <button type="button" className="portal-plain" disabled={busy || loading} onClick={() => void refreshRepositories()}>Refresh repositories</button>
-        </div> : !loading ? <button type="button" className="portal-plain" disabled={busy} onClick={() => void refreshRepositories()}>Retry connection status</button> : null}
-        {connection?.truncated ? <details>
+        </div> : <button type="button" className="portal-plain" disabled={busy || loading} onClick={() => void refreshRepositories()}>Refresh connection</button>}
+        {connected && connection?.truncated ? <details>
           <summary>Repository not listed?</summary>
           <label>GitHub repository link<input name="repositoryLink" type="url" maxLength={500} placeholder="https://github.com/you/your-app" disabled={busy || !ready} aria-invalid={Boolean(formError)} aria-describedby={formError ? "repository-choice-error" : undefined} onChange={event => {
             const select = event.currentTarget.form?.elements.namedItem("repositoryUrl") as HTMLSelectElement | null;

@@ -209,7 +209,7 @@ test("reconnects revoked repository access while keeping the customer signed in 
   await expect(request).toHaveValue("Add custom reports for our team.");
   await expect(page.getByRole("heading", { name: "Your repo. Your next step." })).toBeVisible();
   expect(state.creationCalls).toBe(0);
-  await page.route("**/v1/github/connect?flow=workspace", route => route.fulfill({ status: 302, headers: { location: "http://127.0.0.1:3130/dashboard?github=connected" } }));
+  await page.route("**/v1/github/connect?flow=repositories", route => route.fulfill({ status: 302, headers: { location: "http://127.0.0.1:3130/dashboard?github=connected" } }));
   await page.getByRole("link", { name: "Reconnect GitHub" }).click();
   await expect(request).toHaveValue("Add custom reports for our team.");
   await expect(page.getByLabel("GitHub repository", { exact: true })).toHaveValue("https://github.com/builder/private-app");
@@ -242,12 +242,13 @@ test("handles missing repositories and a failed connection refresh", async ({ pa
   state.connection!.repositories = [];
   await page.goto("/dashboard?start=1");
   await expect(page.getByText("No repositories shared yet.", { exact: false })).toBeVisible();
+  await expect(page.getByLabel("GitHub repository", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Send for review", exact: true })).toBeDisabled();
   await expect(page.getByRole("link", { name: "Choose repositories in GitHub ↗" })).toHaveAttribute("href", state.connection!.installUrl!);
   state.connection!.connectionError = "GitHub connection expired.";
   await page.getByRole("button", { name: "Refresh repositories" }).click();
   await expect(page.locator(".simple-project-form").getByRole("alert")).toContainText("GitHub connection expired");
-  await expect(page.getByRole("link", { name: "Reconnect GitHub" })).toHaveAttribute("href", "http://localhost:3121/v1/github/connect?flow=workspace");
+  await expect(page.getByRole("link", { name: "Reconnect GitHub" })).toHaveAttribute("href", "http://localhost:3121/v1/github/connect?flow=repositories");
   state.connection!.connectionError = null;
   state.connection!.repositories = [{ name: "builder/private-app", url: "https://github.com/builder/private-app", private: true }];
   await page.getByRole("button", { name: "Refresh repositories" }).click();

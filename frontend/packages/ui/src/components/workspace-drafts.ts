@@ -21,6 +21,7 @@ export function consumeStartProjectIntent() {
 
 export function markNewProjectReturn(accountId: string) {
   try {
+    sessionStorage.removeItem(`${PROJECT_CONNECT_RETURN}${accountId}`);
     sessionStorage.setItem(`${CONNECT_RETURN}${accountId}`, String(Date.now() + TTL));
   } catch { /* Optional storage. */ }
 }
@@ -35,7 +36,10 @@ export function consumeNewProjectReturn(accountId: string) {
 }
 
 export function markProjectConnectReturn(accountId: string, projectId: string) {
-  try { sessionStorage.setItem(`${PROJECT_CONNECT_RETURN}${accountId}`, JSON.stringify({ projectId, expires: Date.now() + TTL })); } catch { /* Optional storage. */ }
+  try {
+    sessionStorage.removeItem(`${CONNECT_RETURN}${accountId}`);
+    sessionStorage.setItem(`${PROJECT_CONNECT_RETURN}${accountId}`, JSON.stringify({ projectId, expires: Date.now() + TTL }));
+  } catch { /* Optional storage. */ }
 }
 export function consumeProjectConnectReturn(accountId: string): string | null {
   try {

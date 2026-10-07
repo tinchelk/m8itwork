@@ -119,7 +119,7 @@ test("resumes an email customer's request after connecting GitHub without restor
   const request = page.getByLabel("How can we help move it forward?", { exact: false });
   await request.fill("Add an export workflow to the current app.");
   await expect(page.getByRole("button", { name: "Send for review", exact: true })).toBeDisabled();
-  await page.route("**/v1/github/connect?flow=workspace", route => route.fulfill({ status: 302, headers: { location: "http://127.0.0.1:3130/dashboard?github=connected" } }));
+  await page.route("**/v1/github/connect?flow=repositories", route => route.fulfill({ status: 302, headers: { location: "http://127.0.0.1:3130/dashboard?github=connected" } }));
   state.connection!.githubLogin = "builder";
   await page.getByRole("link", { name: "Connect GitHub", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your repo. Your next step." })).toBeVisible();

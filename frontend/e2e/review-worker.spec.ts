@@ -64,7 +64,7 @@ test("submitted projects reconnect credentials and return to the saved project",
   await page.goto(`/dashboard?project=${state.project.id}`);
   const connection = page.getByRole("link", { name: "Connect GitHub" });
   await expect(connection).toBeVisible();
-  await page.route("**/v1/github/connect?flow=workspace", route => route.fulfill({ status: 302, headers: { location: `http://127.0.0.1:3130/dashboard?github=connected` } }));
+  await page.route("**/v1/github/connect?flow=repositories", route => route.fulfill({ status: 302, headers: { location: `http://127.0.0.1:3130/dashboard?github=connected` } }));
   await connection.click();
   await expect(page.getByRole("heading", { name: "Bloom bookings", exact: true })).toBeVisible();
   expect(state.project.repositoryUrl).toBe("https://github.com/builder/private-app");
