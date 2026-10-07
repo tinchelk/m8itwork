@@ -88,3 +88,19 @@ The current customer destination is [m8itwork.com/dashboard](https://m8itwork.co
 Both frontend services build from `frontend` using `APP=customer` or `APP=admin`. The API now requires `ADMIN_ORIGIN=https://admin.m8itwork.com` alongside its existing customer origin. The existing numeric operator allowlist remains the authority; choosing the admin login flow grants no role. All three updated services deployed successfully, and real GitHub sign-in returns to the correct app. The new proxied admin CNAME targets `v7qsiehk.up.railway.app`; Railway ownership/TLS passed. Existing mail and other domain records were preserved.
 
 [DASHBOARD_BACKOFFICE.md](DASHBOARD_BACKOFFICE.md) records the current deployment IDs, independent review results, rollback coordination, and live dashboard/backoffice/CORS/authentication checks. Full paid-pilot acceptance gates remain open.
+
+## Local subscription review worker rollout — October 6, 2026
+
+Reviewed milestone `f4b2401bcaa0daf3cbaaa1c36b8422795e484234` was committed and pushed after all three independent review gates, 101 backend tests, 78 desktop/mobile checks and both production builds passed. [GitHub CI run 37570065996](https://github.com/tinchelk/m8itwork/actions/runs/37570065996) also completed successfully. Each Railway upload used an exact Git archive of this revision, with ignored configuration and runtime files excluded.
+
+Before additive migration 009, manual Postgres backup `f3e7cd81-d4e1-47a7-99ff-8acd93d6a53a` ("Before local review worker migration009") was created and confirmed in the backup list. All three service deployments succeeded:
+
+| Service | Deployment |
+| --- | --- |
+| API | `dbf39878-67ec-4749-b03f-6b7a2b164c5f` |
+| Customer app | `dba073b2-893f-422f-a97f-c9e30bdfdba2` |
+| Backoffice | `9e64ccf2-5b3c-4b9e-943f-875d8ff2e4d4` |
+
+Post-deployment checks confirmed API health 200, dashboard/backoffice HTTP 200, signed-out operator routes 401, unpaired worker claims 401 and foreign-origin worker requests 403. The deployed privacy page contains the AI-review/provider disclosure. A read-only database query confirmed `202610060009_review_worker` is finished and the paired **Tin-Mac** worker is online. No production customer code was processed or draft published during this rollout. Local synthetic Codex and complete queue-to-result subscription smokes passed separately.
+
+The worker uses a private standalone runtime outside the Documents checkout and starts through a macOS LaunchAgent. Its pairing key is stored only in the private local configuration; Railway stores its hash. Codex subscription login remains on the Mac. Claude is implemented but not authenticated/enabled on this machine. [REVIEW_WORKER.md](REVIEW_WORKER.md) records the operator workflow, startup/pause/revocation and upgrade procedure. Existing real-provider and Stripe acceptance gates remain open; this rollout does not change payment readiness.

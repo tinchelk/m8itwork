@@ -50,4 +50,27 @@ Use the dedicated `m8itwork_test` PostgreSQL database. Run backend tests, lint/t
 
 Migration 009 is additive. Back up production before deploying it. Roll back application code while leaving the additive tables/columns in place; do not drop queued reviews or consent records. Deploy exact committed source archives, excluding `.env`, worker configuration and `backend/var`. Scope operator worker pairing to the allowlisted GitHub ID; the standalone `pair-worker` script prints its token only to the provisioning pipe. Railway never receives CLI subscription credentials.
 
-Verification on October 6:101 backend tests pass against the dedicated PostgreSQL database;78 desktop/mobile browser checks pass, including private queue/draft imports, unchanged final price, permission withdrawal, submitted-project reconnection, stale guards and previous-draft recovery after quota failure. A real synthetic Codex subscription review and a complete local API→queue→worker→private-result smoke passed; no customer code was used or report published. Claude adapter boundaries are tested, but this machine is not authenticated to Claude, so only Codex is enabled for initial operation. All nine migrations apply in order to an empty test database. Staff Engineer, Product Owner and Product Designer gates all pass with no blocking findings or new deferrals. Backend/frontend lint, typecheck and production builds pass. The independent engineer repeated8 PostgreSQL queue tests and4 source/CLI/shutdown boundary tests. The portability note was resolved by accepting a CLI binary argument in the synthetic scripts. Production rollout uses manual backup `f3e7cd81-d4e1-47a7-99ff-8acd93d6a53a` before additive migration009.
+Verification on October 6: 101 backend tests pass against the dedicated PostgreSQL database; 78 desktop/mobile browser checks pass, including private queue/draft imports, unchanged final price, permission withdrawal, submitted-project reconnection, stale guards and previous-draft recovery after quota failure. A real synthetic Codex subscription review and a complete local API→queue→worker→private-result smoke passed; no customer code was used or report published. Claude adapter boundaries are tested, but this machine is not authenticated to Claude, so only Codex is enabled for initial operation. All nine migrations apply in order to an empty test database. Staff Engineer, Product Owner and Product Designer gates all pass with no blocking findings or new deferrals. Backend/frontend lint, typecheck and production builds pass. The independent engineer repeated 8 PostgreSQL queue tests and 4 source/CLI/shutdown boundary tests. The portability note was resolved by accepting a CLI binary argument in the synthetic scripts. Production rollout uses manual backup `f3e7cd81-d4e1-47a7-99ff-8acd93d6a53a` before additive migration 009.
+
+## Installed Mac worker — October 6, 2026
+
+The production connection is **Tin-Mac**, paired to the existing allowlisted operator. Railway confirmed a recent worker heartbeat, no pending jobs, and applied migration `202610060009_review_worker` after deployment. Its private configuration is `~/.m8itwork/worker.json` (mode 600, parent directory 700), with only Codex enabled. The subscription authentication doctor passes with the same minimal environment used by the background process. No production customer-source review was queued during provisioning.
+
+The LaunchAgent is `~/Library/LaunchAgents/com.m8itwork.review-worker.plist`. It runs at login, restarts after unexpected failures, and stays stopped after graceful revocation. Its working directory is `~/.m8itwork`; private logs are in `~/.m8itwork/logs`. The installed runtime is a standalone copy of the reviewed worker modules and Zod in `~/.m8itwork/runtime-f4b2401`, with the full commit recorded in `version.json`. Node and Codex have absolute executable paths. The repository checkout is not required while it runs. Initial startup from the Documents checkout stalled; moving the runtime outside Documents resolved startup without changing macOS permissions.
+
+Check or pause the worker from a local terminal:
+
+```sh
+launchctl print gui/$(id -u)/com.m8itwork.review-worker
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.m8itwork.review-worker.plist
+```
+
+Resume after a local pause:
+
+```sh
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.m8itwork.review-worker.plist
+```
+
+Revocation in **Worker setup** disables the credential; resuming the LaunchAgent does not restore a revoked connection. Pair a new connection instead. The Mac must remain logged in, awake and connected; sleep leaves jobs queued or lets an active lease expire for recovery. No keep-awake setting was changed.
+
+For a worker upgrade, pause the agent, build and verify the reviewed backend revision, copy its `dist/worker`, `dist/reviews/types.js`, `dist/crypto.js` and `node_modules/zod` into a new private runtime directory, and add a private `package.json` with `"type": "module"`. Record the source commit in `version.json`, update the LaunchAgent script path, run the authentication doctor and synthetic subscription smoke, then resume. Keep the private configuration out of the runtime/source archive. Moving or updating Node/Codex also requires updating their configured absolute paths. See [DEPLOYMENT.md](DEPLOYMENT.md) for the service deployment and CI evidence.
