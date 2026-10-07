@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { API, api, type Auth } from "./workspace-types";
 import { WorkshopBackdrop } from "./workshop-backdrop";
+import { rememberCustomerReturn, requestedCustomerReturn } from "./customer-return";
 
 export type AuthMode = "login" | "signup" | "forgot" | "verify" | "reset";
 const titles: Record<AuthMode, string> = { login: "Welcome back.", signup: "Start your next chapter.", forgot: "Get back into your account.", verify: "Confirm your email.", reset: "Choose a new password." };
@@ -44,7 +45,7 @@ export function CustomerAuthPanel({ initialMode = "login", config }: { initialMo
       if (mode === "login") {
         await api("/v1/auth/login", { email, password });
         setPassword("");
-        const target = new URL("/dashboard", window.location.origin), current = new URL(window.location.href);
+        const target = new URL(requestedCustomerReturn() || "/dashboard", window.location.origin), current = new URL(window.location.href);
         for (const key of ["project", "payment"]) { const value = current.searchParams.get(key); if (value) target.searchParams.set(key, value); }
         window.location.assign(target.pathname + target.search);
       } else if (mode === "signup") {
@@ -67,6 +68,7 @@ export function CustomerAuthPanel({ initialMode = "login", config }: { initialMo
     finally { setBusy(false); }
   }
   const tokenMode = mode === "verify" || mode === "reset";
+  const waitingForOptions = !tokenMode && !options;
   const emailDisabled = mode !== "login" && !tokenMode && !options?.emailEnabled;
   return <section className="portal-card portal-signin customer-auth" aria-labelledby="auth-title">
     <p className="portal-kicker">YOUR M8ITWORK ACCOUNT</p>
@@ -75,20 +77,20 @@ export function CustomerAuthPanel({ initialMode = "login", config }: { initialMo
     <div ref={feedback}>{message && <p className="portal-notice" role="status">{message}</p>}{error && <p className="portal-error" role="alert">{error}</p>}</div>
     {configError && <p className="portal-error" role="alert">We couldn’t load sign-in options. <button type="button" className="portal-plain" onClick={() => window.location.reload()}>Reload</button></p>}
     {!tokenMode && mode !== "forgot" && !(mode === "signup" && message) && <>
-      {options?.googleEnabled && <a className="button auth-social" href={`${API}/v1/auth/google/connect?flow=login`}>Continue with Google <span aria-hidden="true">↗</span></a>}
-      {options?.connectEnabled && <a className="auth-github" href={`${API}/v1/github/connect?flow=login`}>Continue with GitHub <span aria-hidden="true">↗</span></a>}
+      {options?.googleEnabled && <a className="button auth-social" onClick={rememberCustomerReturn} href={`${API}/v1/auth/google/connect?flow=login`}>Continue with Google <span aria-hidden="true">↗</span></a>}
+      {options?.connectEnabled && <a className="auth-github" onClick={rememberCustomerReturn} href={`${API}/v1/github/connect?flow=login`}>Continue with GitHub <span aria-hidden="true">↗</span></a>}
       <div className="auth-divider"><span>or use email</span></div>
     </>}
     {!verified && !(mode === "signup" && message) && <form onSubmit={submit} className="auth-form">
-      {mode === "signup" && <label>Your name<input name="name" autoComplete="name" maxLength={100} required value={name} onChange={event => setName(event.target.value)} disabled={busy} /></label>}
-      {!tokenMode && <label>Email address<input name="email" type="email" inputMode="email" spellCheck={false} autoComplete="email" maxLength={254} required value={email} onChange={event => setEmail(event.target.value)} disabled={busy} /></label>}
-      {(mode === "signup" || mode === "login" || mode === "reset") && <label>Password<input name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={mode === "login" ? 1 : 12} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} disabled={busy} /></label>}
+      {mode === "signup" && <label>Your name<input name="name" autoComplete="name" maxLength={100} required value={name} onChange={event => setName(event.target.value)} disabled={busy || waitingForOptions} /></label>}
+      {!tokenMode && <label>Email address<input name="email" type="email" inputMode="email" spellCheck={false} autoComplete="email" maxLength={254} required value={email} onChange={event => setEmail(event.target.value)} disabled={busy || waitingForOptions} /></label>}
+      {(mode === "signup" || mode === "login" || mode === "reset") && <label>Password<input name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={mode === "login" ? 1 : 12} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} disabled={busy || waitingForOptions} /></label>}
       {(mode === "signup" || mode === "reset") && <p className="auth-hint">At least 12 characters. A few memorable words work well.</p>}
-      {mode === "reset" && <label>Confirm password<input name="confirm" type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={confirm} onChange={event => setConfirm(event.target.value)} disabled={busy} /></label>}
-      {mode === "signup" && <label className="auth-consent"><input type="checkbox" checked={consent} required onChange={event => setConsent(event.target.checked)} disabled={busy} /><span>I’ve read the <a href="/privacy" target="_blank" rel="noopener noreferrer">privacy & access terms</a>. Creating an account does not grant repository access.</span></label>}
+      {mode === "reset" && <label>Confirm password<input name="confirm" type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={confirm} onChange={event => setConfirm(event.target.value)} disabled={busy || waitingForOptions} /></label>}
+      {mode === "signup" && <label className="auth-consent"><input type="checkbox" checked={consent} required onChange={event => setConsent(event.target.checked)} disabled={busy || waitingForOptions} /><span>I’ve read the <a href="/privacy" target="_blank" rel="noopener noreferrer">privacy & access terms</a>. Creating an account does not grant repository access.</span></label>}
       {tokenMode && token !== null && !token && <p className="portal-error" role="alert">Open the link from your email. If it expired, request another below.</p>}
       {emailDisabled && options && <p className="portal-muted">Email verification is being set up. Please try again later.</p>}
-      <button className="button" type="submit" disabled={busy || emailDisabled || (tokenMode && !token)}>{busy ? "Working…" : mode === "signup" ? "Create account" : mode === "login" ? "Sign in" : mode === "forgot" ? "Send reset link" : mode === "verify" ? "Verify email" : "Update password"}<span aria-hidden="true">↗</span></button>
+      <button className="button" type="submit" disabled={busy || waitingForOptions || emailDisabled || (tokenMode && !token)}>{busy ? "Working…" : mode === "signup" ? "Create account" : mode === "login" ? "Sign in" : mode === "forgot" ? "Send reset link" : mode === "verify" ? "Verify email" : "Update password"}<span aria-hidden="true">↗</span></button>
     </form>}
     <div className="auth-links">
       {mode === "login" && <><a href="/signup" onClick={event => { event.preventDefault(); change("signup"); }}>Create an account</a><a href="/forgot-password" onClick={event => { event.preventDefault(); change("forgot"); }}>Forgot password?</a></>}

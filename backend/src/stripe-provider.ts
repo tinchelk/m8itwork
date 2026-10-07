@@ -16,6 +16,9 @@ export interface Checkout {
   receiptUrl: string | null;
   disputed?: boolean;
   observedAt?: number;
+  customerId?: string | null;
+  invoiceUrl?: string | null;
+  invoicePdf?: string | null;
 }
 export interface CheckoutInput {
   attemptId: string;
@@ -25,6 +28,7 @@ export interface CheckoutInput {
   amountCents: number;
   currency: string;
   email: string;
+  customerId?: string;
 }
 export interface PaymentProvider {
   enabled: boolean;
@@ -77,6 +81,7 @@ export class StripeProvider implements PaymentProvider {
       intent?.latest_charge && typeof intent.latest_charge !== "string"
         ? intent.latest_charge
         : null;
+    const invoice = session.invoice && typeof session.invoice !== "string" ? session.invoice : null;
     return {
       id: session.id,
       url: session.url,
@@ -92,6 +97,9 @@ export class StripeProvider implements PaymentProvider {
           : (intent?.id ?? null),
       refundedCents: charge?.amount_refunded ?? 0,
       receiptUrl: charge?.receipt_url ?? null,
+      customerId: typeof session.customer === "string" ? session.customer : session.customer?.id ?? null,
+      invoiceUrl: invoice?.hosted_invoice_url ?? null,
+      invoicePdf: invoice?.invoice_pdf ?? null,
     };
   }
   async create(input: CheckoutInput) {
@@ -99,9 +107,10 @@ export class StripeProvider implements PaymentProvider {
     const session = await this.stripe().checkout.sessions.create(
       {
         mode: "payment",
+        managed_payments: { enabled: false },
         ui_mode: "hosted_page",
         allowed_payment_method_types: ["card"],
-        ...(input.email ? { customer_email: input.email } : {}),
+        ...(input.customerId ? { customer: input.customerId, invoice_creation: { enabled: true, invoice_data: { metadata: { attemptId: input.attemptId } } }, saved_payment_method_options: { payment_method_save: "enabled" as const } } : input.email ? { customer_email: input.email } : {}),
         adaptive_pricing: { enabled: false },
         allow_promotion_codes: false,
         client_reference_id: input.projectId,
@@ -130,7 +139,7 @@ export class StripeProvider implements PaymentProvider {
     // Fence snapshots started before a newer reconciliation transaction.
     const observedAt = Date.now();
     const session = await this.stripe().checkout.sessions.retrieve(id, {
-      expand: ["payment_intent.latest_charge"],
+      expand: ["payment_intent.latest_charge", "invoice"],
     });
     const checkout = this.normalize(session);
     if (checkout.paid && checkout.paymentIntentId) {

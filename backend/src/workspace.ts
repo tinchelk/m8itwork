@@ -11,6 +11,7 @@ import {
 } from "./payment-rules.js";
 import { registerCollaboration } from "./collaboration.js";
 import { registerPayments } from "./payments.js";
+import type { registerBilling } from "./billing.js";
 import type { PaymentProvider } from "./stripe-provider.js";
 import { isAppOrigin, type Env } from "./config.js";
 import { AppError } from "./shared/errors.js";
@@ -76,6 +77,7 @@ export async function registerWorkspace(
   options: {
     prisma: PrismaClient;
     paymentProvider: PaymentProvider;
+    billing?: Awaited<ReturnType<typeof registerBilling>>;
     env: Env;
     session: (
       request: FastifyRequest,
@@ -691,5 +693,6 @@ export async function registerWorkspace(
     env,
     access,
     provider: options.paymentProvider,
+    ...(options.billing ? { billing: options.billing } : {}),
   });
 }

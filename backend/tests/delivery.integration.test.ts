@@ -291,6 +291,22 @@ describe.skipIf(!url)(
       ).toBe(200);
       return checkout;
     }
+    it("reconciles delayed invoice documents without duplicating a recorded payment", async () => {
+      const { id, customer, milestones } = await agreed();
+      const checkout = await pay(id, customer, milestones[0]!.id);
+      checkout.invoiceUrl = "https://invoice.stripe.com/i/fixture";
+      checkout.invoicePdf = "https://invoice.stripe.com/i/fixture/pdf";
+      checkout.receiptUrl = "https://pay.stripe.com/receipts/fixture";
+      const before = await prisma.projectUpdate.count({ where: { projectId: id } });
+      const eventId = `evt_${randomUUID()}`;
+      for (let i = 0; i < 2; i++) expect((await event("invoice.paid", { id: "in_fixture", metadata: { attemptId: checkout.attemptId } }, { id: eventId })).statusCode).toBe(200);
+      const saved = await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: checkout.attemptId } });
+      expect(saved).toMatchObject({ status: "PAID", invoiceUrl: checkout.invoiceUrl, invoicePdf: checkout.invoicePdf, receiptUrl: checkout.receiptUrl });
+      expect(await prisma.projectUpdate.count({ where: { projectId: id } })).toBe(before);
+      expect(await prisma.paymentAttempt.count({ where: { milestoneId: milestones[0]!.id } })).toBe(1);
+      const billing = (await get("/v1/billing", customer)).json<{history:{id:string;invoiceUrl:string|null}[]}>();
+      expect(billing.history.find(row => row.id === saved.id)?.invoiceUrl).toBe(checkout.invoiceUrl);
+    });
     async function progress(id: string, stage: string, evidence?: string) {
       const current = await detail(id, team, true);
       return post(`/v1/operator/projects/${id}/progress`, team, {

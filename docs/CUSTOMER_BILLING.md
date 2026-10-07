@@ -1,0 +1,36 @@
+# Customer account and billing
+
+User outcome: a customer can manage saved cards from Account and understand all agreed project payments from Billing, in a complete, consistent customer app.
+
+Scope: remove the Website navigation link; add persistent Dashboard/Billing/Account navigation; redesign Account with clear identity/sign-in sections and saved card management; add secure hosted card setup, owned-card removal, paginated card lists and authoritative return verification; add account-wide due payments, payment history, receipts and available Stripe invoice links with pagination, currency/mode separation and project links. New project Checkout uses the same owned Stripe customer so saved cards can be reused. Card numbers and security codes stay with Stripe.
+
+No subscriptions, automatic/off-session charges, automatic refunds, changed project prices or changed operator access. The user confirmed this is a fresh development product and authorized cleanup, so there is no legacy Checkout compatibility path. Billing uses agreed project amounts and the existing payment reconciliation/gates.
+
+Acceptance:
+
+1. Customer navigation has no Website link and exposes Billing/Account on desktop/mobile. Account/Billing have clear loading, sign-in, empty, failure, retry and success states, matching the dark workshop UI.
+2. An authenticated customer can list masked cards, add a card without a charge through Stripe Checkout setup mode, verify a completed return, and explicitly remove their own card. Foreign account/card/setup-session IDs fail closed. Origin checks protect writes. No PAN/CVC/provider secrets are accepted or returned by the API.
+3. Stripe customers belong to one account and one payment mode; durable reservation plus stable idempotency parameters recover concurrent/lost creation responses. Card removal records verified ownership before detaching, allowing a safe retry after a lost response.
+4. Billing exposes only owned records. History is paginated, paid/refunded/disputed/processing/failed states are accurate, currencies and test/live balances remain separate, and outstanding payments link to the current agreed project/payment workflow. Query strings alone do not declare a card saved or payment received.
+5. Existing signup, drafts, project approval, Checkout retries, refunds/disputes and delivery gates remain valid. An unconfigured provider is not presented as working card management or real payment readiness.
+
+Verification: real PostgreSQL billing/tenant/idempotency/integration tests, Stripe SDK contract tests, desktop/mobile browser journeys and visual checks, lint/typecheck/build, followed by the three independent repository review gates. Configure and test the dedicated Stripe provider before claiming production card/payment acceptance. No real card is added/removed or real payment collected by development verification.
+
+Implementation and readiness:
+
+- Additive migration 013 adds an account/mode Stripe customer reservation, verified card-removal reservation, and payment customer/document identifiers. BillingCustomer is created only on explicit card setup or Checkout. GET does not create Stripe records. Stable immutable customer metadata and setup request IDs recover network ambiguity; unresolved customer creation after 23 hours requires reconciliation.
+- Customer-only POST routes require the exact customer origin. Card fields are entered only on Stripe-hosted setup Checkout. Remove uses a styled, keyboard-accessible confirmation and a durable ownership proof before detach; retry can recognize a card already removed after a lost response. Current-mode profiles, provider ownership checks, owned cursors and authoritative setup verification prevent cross-account access.
+- Agreed project Checkout uses the owned customer, enables customer-selected card saving and post-payment invoice creation. Saved cards never trigger off-session charges. Invoice creation has additional Stripe pricing; see the [Stripe receipt/invoice guide](https://docs.stripe.com/receipts). Stripe's Managed Payments default is explicitly disabled per Checkout request because this service uses standard Checkout; no merchant-account defaults are changed.
+- `invoice.paid` retrieves the stored Checkout to fill delayed invoice/PDF links without re-recording payments. Receipts and invoice links are HTTPS Stripe URLs. History is scoped to the signed-in customer and paged at 25, with per-currency/test/live totals. Only released installments in the current approved proposal appear as due; refund/dispute/earlier-payment blockers link to project review.
+- Dashboard, Billing and Account navigation is consistent. Account includes identity, cards and security/recovery; email and OAuth sign-in can return to Account/Billing using only fixed allowed routes. Mobile payment records include amount, date, status and documents without horizontal scrolling. Filters reuse the shared custom menu.
+- A dedicated sandbox webhook was created at `https://api.m8itwork.com/v1/stripe/webhook`, endpoint `we_1UNxoY9R05CEnaVmL0AJ4pC8`; its signing secret is saved only in ignored backend/.env. The supplied server key is **test**, not live. Stripe reports live charges disabled; activation and live credentials remain required before real customer collection.
+- Real sandbox SDK verification passed: owned customer creation, hosted setup Checkout, incomplete setup verified false, project payment Checkout with the same customer, masked test-card listing, owned detach and detached retry. Synthetic test customer and open Checkouts were cleaned up. No payment was collected. This verifies provider API contracts, not a completed human Checkout or live financial transaction.
+
+Final verification and review (2026-10-07):
+
+- `make verify` passed all 148 backend tests, lint, types, backend compilation, and both customer/admin production builds. All 178 desktop/mobile Playwright checks passed without retries, including the existing project approval, payment, worker and delivery journeys.
+- A final real sandbox SDK check confirmed an incomplete setup is not reported saved and an expired session is freshly reconciled on a repeated idempotent setup request. Synthetic Stripe records were cleaned up without collecting payment.
+- Staff Engineer gate passed with no blocking findings after independent 35-test backend/SDK and 30-test billing browser runs. The due-list reconciliation finding was fixed, including overpaid/wrong-mode and processing installments.
+- Senior Product Owner and Senior Product Designer gates passed with no remaining or deferred product/design findings. Terminal setup retries, logout recovery, local action feedback, pending-payment guidance and customer-facing billing copy were fixed and covered.
+- This milestone adds no engineering deferrals. Previously documented GitHub/reset lock-order hardening remains outside this scoped change. Sandbox release is ready; live collection still requires Stripe activation, live keys and a matching live webhook, plus authorized financial verification.
+- Railway volume backup `f7b230e4-1358-4ffe-bfa3-ea683376208c` was listed before migration 013. The migration is additive; a code rollback should leave the new tables/columns in place.

@@ -64,6 +64,14 @@ describe("Stripe SDK adapter contract", () => {
     await new StripeProvider(env, stripe).create({ attemptId: "attempt", projectId: "project", projectName: "private-app", label: "Deposit", amountCents: 10000, currency: "USD", email: "" });
     expect(create.mock.calls[0]![0]).not.toHaveProperty("customer_email");
   });
+  it("reuses the owned customer, offers saved cards and creates post-payment invoice documents", async () => {
+    const stripe = new Stripe(env.STRIPE_SECRET_KEY);
+    const create = vi.spyOn(stripe.checkout.sessions, "create").mockResolvedValue({ ...session, customer: "cus_owned" });
+    const result = await new StripeProvider(env, stripe).create({ attemptId: "attempt", projectId: "project", projectName: "Booking app", label: "Deposit", amountCents: 10000, currency: "USD", email: "builder@example.invalid", customerId: "cus_owned" });
+    expect(create.mock.calls[0]![0]).toMatchObject({ customer: "cus_owned", invoice_creation: { enabled: true, invoice_data: { metadata: { attemptId: "attempt" } } }, saved_payment_method_options: { payment_method_save: "enabled" } });
+    expect(create.mock.calls[0]![0]).not.toHaveProperty("customer_email");
+    expect(result.customerId).toBe("cus_owned");
+  });
   it("reads authoritative disputes with paid Checkout and includes a snapshot fence", async () => {
     const stripe = new Stripe(env.STRIPE_SECRET_KEY);
     vi.spyOn(stripe.checkout.sessions, "retrieve").mockResolvedValue({

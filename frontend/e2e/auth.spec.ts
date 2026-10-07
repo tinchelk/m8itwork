@@ -15,6 +15,7 @@ async function authFixture(page: Page, emailEnabled = true) {
     if (path === "/v1/auth/register") return send({ message: "Check your inbox to verify your email." }, 202);
     if (path.endsWith("/request")) return send({ message: "If an account exists for that email, check your inbox." }, 202);
     if (path.endsWith("/confirm")) return send({ verified: true, reset: true });
+    if (path === "/v1/billing/cards") return send({ enabled: false, mode: "unconfigured", cards: [], next: null });
     if (path === "/v1/projects") return send({ projects: [] });
     if (path === "/v1/session") return send({ connectEnabled: true, githubLogin: null, repositories: [], connectionError: null });
     return send({ error: { message: "Unexpected fixture request." } }, 404);
@@ -140,14 +141,14 @@ test("resumes an email customer's request after connecting GitHub without restor
 test("shows Google link recovery and success on Account settings", async ({ page }) => {
   const state = await authFixture(page); state.signIn();
   await page.goto("/account?google=link-mismatch");
-  await expect(page.locator(".customer-auth").getByRole("alert")).toContainText("Choose the same Google email");
+  await expect(page.locator("main").getByRole("alert")).toContainText("Choose the same Google email");
   await page.goto("/account?google=connected");
-  await expect(page.getByRole("status")).toContainText("Google is connected");
+  await expect(page.locator(".portal-notice[role=status]")).toContainText("Google is connected");
   state.disableRecovery();
   await page.goto("/account?google=recovery-conflict");
-  await expect(page.locator(".customer-auth").getByRole("alert")).toContainText("recovery to the old email is disabled");
+  await expect(page.locator("main").getByRole("alert")).toContainText("recovery to the old email is disabled");
   await page.goto("/account");
   await expect(page.getByText("Email password recovery is disabled.", { exact: false })).toBeVisible();
-  await expect(page.getByRole("link", { name: "hello@m8itwork.com" })).toHaveAttribute("href", "mailto:hello@m8itwork.com");
+  await expect(page.locator("#sign-in-methods").getByRole("link", { name: "hello@m8itwork.com" })).toHaveAttribute("href", "mailto:hello@m8itwork.com");
   await expect(page.getByRole("link", { name: "Connect Google" })).toHaveCount(0);
 });

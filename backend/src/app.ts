@@ -25,6 +25,8 @@ import { GoogleOidcProvider, type GoogleProvider } from "./google-provider.js";
 import { registerReviews } from "./reviews/routes.js";
 import { registerWorkspace } from "./workspace.js";
 import { StripeProvider, type PaymentProvider } from "./stripe-provider.js";
+import { StripeBillingProvider, type BillingProvider } from "./billing-provider.js";
+import { registerBilling } from "./billing.js";
 import { clientRateLimitKey } from "./proxy-trust.js";
 
 declare module "fastify" {
@@ -86,6 +88,7 @@ export async function buildApp(
     logger?: boolean;
     rateLimiting?: boolean;
     paymentProvider?: PaymentProvider;
+    billingProvider?: BillingProvider;
     accountEmailProvider?: AccountEmailProvider;
     googleProvider?: GoogleProvider;
   } = {},
@@ -764,11 +767,13 @@ export async function buildApp(
       });
     },
   );
+  const billing = await registerBilling(app, { prisma, env, provider: options.billingProvider ?? new StripeBillingProvider(options.paymentProvider ? { ...env, STRIPE_SECRET_KEY: "", STRIPE_WEBHOOK_SECRET: "" } : env) });
   await registerWorkspace(app, {
     prisma,
     env,
     session,
     paymentProvider: options.paymentProvider ?? new StripeProvider(env),
+    billing,
   });
   await registerReviews(app, { prisma, env, github });
   app.addHook("onClose", () => prisma.$disconnect());

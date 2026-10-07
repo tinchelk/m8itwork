@@ -55,7 +55,7 @@ export default function Privacy() {
           project and installment names, agreed amount and currency, and
           identifiers linking the payment to your project. We do not receive or
           store your full card number. We retain the agreed payment schedule,
-          Stripe transaction identifiers, payment status, receipt links, and
+          Stripe transaction identifiers, payment status, receipt and invoice links, and
           refund or dispute information to reconcile payments and deliver work.
           Stripe processes payment information under its own{" "}
           <a
@@ -66,6 +66,15 @@ export default function Privacy() {
             privacy policy
           </a>
           .
+        </p>
+        <p>
+          You can choose to save a card in Account or during Checkout for a
+          future agreed project payment. Stripe stores the card details; we
+          retain its payment-method identifier and display only its brand, last
+          four digits and expiry. Adding a card does not make a payment, and
+          saving it does not authorize us to charge it automatically. Remove
+          saved cards in Account. Removing a card does not cancel an agreed
+          project or refund an existing payment.
         </p>
         <h2>Repository inspection</h2>
         <p>

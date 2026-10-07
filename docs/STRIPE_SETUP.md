@@ -1,6 +1,6 @@
 # Stripe payment setup and live verification
 
-The implementation uses one-time hosted card Checkout. Do not configure keys in frontend environment variables or commit them. No actual payment was taken during implementation; integration/browser fixtures do not verify a real Stripe round trip.
+The implementation uses one-time hosted card Checkout and hosted setup Checkout for optional saved cards. Do not configure keys in frontend environment variables or commit them. No actual payment was taken during implementation; integration/browser fixtures do not verify a completed real Stripe payment. The customer-billing milestone additionally verified setup/payment session creation, masked card listing and removal with the real sandbox API; see `CUSTOMER_BILLING.md`.
 
 ## Configure the pilot sandbox
 
@@ -29,8 +29,16 @@ See the current [Stripe testing documentation](https://docs.stripe.com/testing),
 
 ## Production gate
 
-Configure HTTPS frontend/API origins, production GitHub callbacks, trusted operator IDs, durable PostgreSQL/backups, cleanup, proxy/rate limits, and live Stripe server credentials. Register an HTTPS Stripe webhook endpoint at `/v1/stripe/webhook` and use its signing secret. Subscribe to `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`, `charge.dispute.created`, and `charge.dispute.closed`.
+Configure HTTPS frontend/API origins, production GitHub callbacks, trusted operator IDs, durable PostgreSQL/backups, cleanup, proxy/rate limits, and live Stripe server credentials. Register an HTTPS Stripe webhook endpoint at `/v1/stripe/webhook` and use its signing secret. Subscribe to `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`, and `invoice.paid`.
 
 Verify sandbox behavior first, then obtain explicit authorization before any real financial verification. Monitor failed webhook delivery and retry it in Stripe; operators can use Check payment status to reconcile the current session. This app does not run a background settlement worker. No production deployment or live-money closure is claimed by this document.
 
 Customer Checkout success/cancel returns now use `/dashboard` with the project/payment query parameters. The backoffice has its own frontend origin: `ADMIN_ORIGIN` on the API and `NEXT_PUBLIC_ADMIN_ORIGIN` on both frontend builds. Keep the two exact origins configured; they do not grant operator access without the server allowlist.
+
+## Account payment methods and Billing
+
+Account adds cards with Stripe Checkout `mode=setup`, without a charge, and removes only payment methods verified as belonging to that account. New project Checkout uses the same Stripe customer; the customer chooses whether to save a card during payment. Test/live profiles are distinct. No subscription, arbitrary debit or off-session charge endpoint exists. Billing shows the owned account’s released agreed installments, paginated payment history, receipts and available invoice/PDF links. Refunds and disputes remain team-review states; removing a card does not cancel or refund a project.
+
+Setup/payment sessions explicitly use `managed_payments[enabled]=false`; the supplied Stripe sandbox otherwise defaults to Managed Payments, which rejects setup Checkout. This selects standard Checkout per request without changing account settings. Post-payment invoice creation is enabled for customer-associated project payments and is [priced separately by Stripe](https://docs.stripe.com/receipts); review merchant pricing before live launch. An `invoice.paid` event reconciles delayed documents through the stored Checkout.
+
+For this development release, the dedicated HTTPS test webhook is configured and real sandbox API contract checks pass. Live charges are disabled in the supplied account, and only test credentials were supplied. Complete account activation, configure live key + matching live webhook signing secret, and agree a new live project before collecting real money. Hosted Checkout needs no frontend publishable key. Do not reuse a test billing profile or ledger as a live agreement.

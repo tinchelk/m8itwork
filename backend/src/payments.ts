@@ -6,6 +6,7 @@ import { projectId, type ProjectAccess } from "./project-access.js";
 import { paid, paidInMode } from "./payment-rules.js";
 import type { Checkout, PaymentProvider } from "./stripe-provider.js";
 import { AppError } from "./shared/errors.js";
+import type { registerBilling } from "./billing.js";
 
 export async function registerPayments(
   app: FastifyInstance,
@@ -14,6 +15,7 @@ export async function registerPayments(
     env: Env;
     access: ProjectAccess;
     provider: PaymentProvider;
+    billing?: Awaited<ReturnType<typeof registerBilling>>;
   },
 ) {
   const { prisma, access, provider } = options;
@@ -56,6 +58,7 @@ export async function registerPayments(
       checkout.amountCents !== attempt.amountCents ||
       checkout.currency.toUpperCase() !== attempt.currency ||
       checkout.live !== (attempt.mode === "live")
+      || (attempt.stripeCustomerId && checkout.customerId !== attempt.stripeCustomerId)
     )
       throw new AppError(
         409,
@@ -126,6 +129,8 @@ export async function registerPayments(
               : {}),
             checkoutUrl: checkout.url,
             receiptUrl: checkout.receiptUrl ?? current.receiptUrl,
+            invoiceUrl: checkout.invoiceUrl ?? current.invoiceUrl,
+            invoicePdf: checkout.invoicePdf ?? current.invoicePdf,
             refundedCents: refunded,
             disputed: held,
             ...(dispute && dispute.created >= current.disputeEventCreated
@@ -282,6 +287,12 @@ export async function registerPayments(
           "CHECKOUT_RECOVERY_REQUIRED",
           "The team must recover this unfinished Checkout from Stripe before retrying. Contact them in the conversation.",
         );
+      let customerId = attempt.stripeCustomerId;
+      if (!attempt.stripeSessionId && options.billing?.enabled && !customerId) {
+        if (options.billing.mode !== provider.mode) throw new AppError(503, "BILLING_SETUP_REQUIRED", "Billing needs a team check before this payment can open. Contact the team in your project.");
+        customerId = await options.billing.customer(account);
+        await prisma.paymentAttempt.updateMany({ where: { id: attempt.id, stripeCustomerId: null }, data: { stripeCustomerId: customerId } });
+      }
       const checkout = attempt.stripeSessionId
         ? await provider.retrieve(attempt.stripeSessionId)
         : await provider.create({
@@ -292,6 +303,7 @@ export async function registerPayments(
             amountCents: attempt.amountCents,
             currency: attempt.currency,
             email: project.contactEmail,
+            ...(customerId ? { customerId } : {}),
           });
       const result = await reconcile(checkout, attempt);
       if ("status" in result && result.status === "PAID") return { paid: true };
@@ -522,6 +534,7 @@ export async function registerPayments(
             "checkout.session.async_payment_succeeded",
             "checkout.session.async_payment_failed",
             "checkout.session.expired",
+            "invoice.paid",
           ].includes(event.type)
         ) {
           attempt = await prisma.paymentAttempt.findFirst({
@@ -534,8 +547,8 @@ export async function registerPayments(
               ],
             },
           });
-          if (attempt)
-            await reconcile(await provider.retrieve(object.id), attempt, {
+          if (attempt && (event.type !== "invoice.paid" || attempt.stripeSessionId))
+            await reconcile(await provider.retrieve(event.type === "invoice.paid" ? attempt.stripeSessionId! : object.id), attempt, {
               id: event.id,
               type: event.type,
             });

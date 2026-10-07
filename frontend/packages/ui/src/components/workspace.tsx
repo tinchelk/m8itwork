@@ -1,4 +1,5 @@
 "use client";
+import { consumeCustomerReturn } from "./customer-return";
 import { SelectField } from "./form-controls";
 import { WorkerSetup, AiReviewConsent } from "./review-assistant";
 import {
@@ -191,6 +192,11 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
         if (params.get("google") === "link") setError("That email already belongs to an account. Sign in with your existing method, then connect Google from Account settings.");
         if (params.get("google") === "verify-email") setError("Create and verify an email account first, then connect Google from Account settings. This Google account cannot confirm current ownership of its email address.");
         if (!result.account || (admin && !result.account.isOperator)) return;
+        const customerReturn = !admin ? consumeCustomerReturn() : null;
+        if (customerReturn && !params.has("project") && !params.has("start")) {
+          window.location.replace(customerReturn);
+          return;
+        }
         const teamView = admin;
         const list = await api<{ projects: ProjectListItem[] }>(
           teamView ? "/v1/operator/projects" : "/v1/projects",
@@ -393,11 +399,10 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
           {admin ? "BACKOFFICE" : "CUSTOMER DASHBOARD"}
         </span>
         <nav aria-label={admin ? "Backoffice navigation" : "Dashboard navigation"}>
-          <a href={admin ? CUSTOMER_ORIGIN : "/"}>Website</a>
           {auth?.account && (
             <>
               <span className="portal-user">{auth.account.githubLogin ? `@${auth.account.githubLogin}` : auth.account.displayName || auth.account.email || "Your account"}</span>
-              {!admin && <a className="portal-account-link" href="/account">Account</a>}
+              {!admin && <><a className="portal-account-link" href="/billing">Billing</a><a className="portal-account-link" href="/account">Account</a></>}
               {auth.account.isOperator && (
                 <a
                   className="portal-admin-link"

@@ -42,7 +42,30 @@ model Account {
   inspections Inspection[]
   tokens      AccountToken[]
   reviewWorkers ReviewWorker[]
+  billingCustomers BillingCustomer[]
   createdAt   DateTime         @default(now())
+}
+
+model BillingCustomer {
+  id String @id @default(uuid()) @db.Uuid
+  accountId String @db.Uuid
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  mode String
+  stripeCustomerId String? @unique
+  createdAt DateTime @default(now())
+  removals BillingCardRemoval[]
+
+  @@unique([accountId, mode])
+}
+
+model BillingCardRemoval {
+  id String @id @default(uuid()) @db.Uuid
+  billingCustomerId String @db.Uuid
+  billingCustomer BillingCustomer @relation(fields: [billingCustomerId], references: [id], onDelete: Cascade)
+  methodId String
+  createdAt DateTime @default(now())
+
+  @@unique([billingCustomerId, methodId])
 }
 
 model AccountToken {
@@ -266,6 +289,9 @@ model PaymentAttempt {
   stripePaymentIntentId String?          @unique
   checkoutUrl           String?
   receiptUrl            String?
+  stripeCustomerId       String?
+  invoiceUrl            String?
+  invoicePdf            String?
   refundedCents         Int              @default(0)
   disputed              Boolean          @default(false)
   disputeEventCreated   Int              @default(0)
