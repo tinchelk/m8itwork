@@ -133,7 +133,7 @@ test("sends only a repository and request straight to review", async ({ page }, 
   await page.screenshot({ path: testInfo.outputPath(`simple-project-${testInfo.project.name}.png`), fullPage: true });
   const createRequest = page.waitForRequest(request => request.url().endsWith("/v1/projects") && request.method() === "POST");
   await page.getByRole("button", { name: "Send for review", exact: true }).click();
-  expect(Object.keys((await createRequest).postDataJSON()).sort()).toEqual(["consent", "id", "inspectionId", "summary"]);
+  expect(Object.keys((await createRequest).postDataJSON()).sort()).toEqual(["consent", "id", "inspectionId", "reviewConsent", "summary"]);
   await expect(page.getByRole("heading", { name: "We’re reviewing your next step." })).toBeVisible();
   await expect(page.getByRole("heading", { name: "private-app", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Submit for review" })).toHaveCount(0);

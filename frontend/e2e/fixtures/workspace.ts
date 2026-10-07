@@ -129,6 +129,13 @@ export async function mockWorkspace(
       state.signedOut = true;
       return send({ signedOut: true });
     }
+    if (path === "/v1/operator/review-workers") return send({ workers: [] });
+    if (path.endsWith("/review-jobs")) return send({ jobs: [], onlineWorkers: 0 });
+    if (path.endsWith("/ai-review-consent")) {
+      state.project.aiReviewConsentAt = body.consent ? new Date().toISOString() : null;
+      state.project.version++;
+      return send({ saved: true });
+    }
     if (path === "/v1/session") return send(state.connection);
     if (path.endsWith("/messages") && method === "GET") {
       const before = new URL(route.request().url()).searchParams.get("before");

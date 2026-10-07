@@ -1174,3 +1174,26 @@
 .project-submit-note a { text-decoration: underline; text-underline-offset: 3px; }
 .simple-intake-start { align-self: start; }
 .simple-intake-start .button { margin-top: 18px; }
+
+.review-assistant { border: 1px solid #426275; border-radius: 14px; background: #102432; padding: clamp(18px, 3vw, 28px); margin-bottom: 32px; }
+.review-assistant h3 { margin: 0; font-size: 1.4rem; }
+.review-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 14px; margin: 18px 0; }
+.review-controls label { display: grid; gap: 8px; min-width: 190px; flex: 1; }
+.review-assistant input, .review-assistant select, .worker-setup input, .worker-secret textarea { width: 100%; border: 1px solid #577588; border-radius: 7px; padding: 12px; background: #0b1e2c; color: #edf5f7; font: inherit; }
+.review-assistant .button.outline, .portal-card .button.outline { color: #e4f8f2; }
+.review-job-status { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 16px 0; color: #d8eeeb; }
+.review-job-status span { overflow-wrap: anywhere; }
+.review-draft, .review-calculator { border-top: 1px solid #3a5466; padding: 18px 0; }
+.review-draft summary, .review-calculator summary, .worker-setup > summary { cursor: pointer; font-weight: 700; }
+.review-finding { border-left: 3px solid #dba875; padding: 4px 0 4px 16px; margin: 20px 0; overflow-wrap: anywhere; }
+.review-finding strong { text-transform: uppercase; font: 700 .8rem var(--font-mono), monospace; color: #f2bc85; }
+.review-calculator .portal-form-row { margin-top: 18px; }
+.review-calculator label { display: grid; gap: 8px; }
+.worker-list { list-style: none; padding: 0; }
+.worker-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; border-top: 1px solid #3a5466; padding: 12px 0; gap: 12px; }
+.worker-secret { background: #0b1e2c; padding: 18px; border-radius: 8px; margin: 18px 0; }
+.worker-secret label { display: grid; gap: 8px; }
+.worker-secret code { overflow-wrap: anywhere; }
+.review-assistant :focus-visible, .worker-setup :focus-visible { outline: 3px solid #9be7db; outline-offset: 4px; }
+@media (max-width: 640px) { .review-controls { align-items: stretch; } .review-controls .button { width: 100%; } }
+.review-history { display: grid; gap: 8px; margin-top: 20px; }

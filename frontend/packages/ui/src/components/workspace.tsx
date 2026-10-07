@@ -1,4 +1,5 @@
 "use client";
+import { WorkerSetup, AiReviewConsent } from "./review-assistant";
 import {
   useCallback,
   useEffect,
@@ -21,7 +22,7 @@ import {
   requestedPayment,
 } from "./project-payments";
 import { ProjectDelivery, TeamNotes } from "./project-delivery";
-import { clearAccountDrafts, consumeNewProjectReturn, consumeStartProjectIntent, markStartProjectIntent } from "./workspace-drafts";
+import { markProjectConnectReturn, consumeProjectConnectReturn, clearAccountDrafts, consumeNewProjectReturn, consumeStartProjectIntent, markStartProjectIntent } from "./workspace-drafts";
 import {
   API,
   ADMIN_ORIGIN,
@@ -201,7 +202,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
           requestAnimationFrame(() => contentTitle.current?.focus());
           return;
         }
-        const selected = params.get("project");
+        const selected = params.get("project") ?? (!teamView && params.has("github") ? consumeProjectConnectReturn(result.account.id) : null);
         const first = list.projects.find((item) => item.id === selected);
         if (first) {
           const [detail, repoConnection] = await Promise.all([
@@ -605,6 +606,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                 <span aria-hidden="true">↻</span>
               </button>
             </div>
+            {team && !project && listLoaded && <WorkerSetup />}
             {!listLoaded ? (
               <section className="portal-card">
                 <h1>Your projects couldn’t be loaded.</h1>
@@ -712,6 +714,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                     busy={busy}
                   />
                 )}
+                {!team && <AiReviewConsent project={project} save={save} busy={busy} />}
                 <div className="portal-project-grid">
                   <div className="portal-main-column">
                     <ProjectConversation
@@ -754,6 +757,12 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                           inventory={project.inspectionReport}
                         />
                       )}
+                      {project.stage !== "DRAFT" && !team && project.repositoryUrl && <div className="portal-connect">
+                        <h3>Repository access</h3>
+                        <p className="portal-muted">{connection?.githubLogin && !connection.connectionError ? `Connected as @${connection.githubLogin}.` : "Reconnect GitHub so we can review your saved repository. Your project and saved commit stay the same."}</p>
+                        {connection?.connectionError && <p className="portal-notice">{connection.connectionError}</p>}
+                        {connection?.connectEnabled && <div className="portal-connection-actions"><a className="portal-link-button" href={`${API}/v1/github/connect?flow=workspace`} onClick={() => markProjectConnectReturn(auth.account!.id, project.id)}>{connection.githubLogin ? "Reconnect GitHub" : "Connect GitHub"} ↗</a><button className="portal-plain" disabled={busy} onClick={refresh}>Refresh connection</button></div>}
+                      </div>}
                       {project.stage === "DRAFT" && !team && (
                         <div className="portal-connect">
                           <h3>

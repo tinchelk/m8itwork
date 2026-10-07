@@ -18,7 +18,10 @@
     "leads": "tsx scripts/leads.ts",
     "lead:status": "tsx scripts/lead-status.ts",
     "github:setup": "tsx scripts/github-setup.ts",
-    "cleanup": "tsx scripts/cleanup.ts"
+    "cleanup": "tsx scripts/cleanup.ts",
+    "worker:run": "tsx src/worker/main.ts run",
+    "worker:doctor": "tsx src/worker/main.ts doctor",
+    "worker:configure": "tsx src/worker/main.ts configure"
   },
   "dependencies": {
     "@fastify/cookie": "10.0.1",

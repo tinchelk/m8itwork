@@ -41,6 +41,7 @@ model Account {
   projects    Project[]
   inspections Inspection[]
   tokens      AccountToken[]
+  reviewWorkers ReviewWorker[]
   createdAt   DateTime         @default(now())
 }
 
@@ -88,6 +89,8 @@ model Project {
   accessNote            String?
   repositoryUrl         String?
   inspectionReport      Json?
+  aiReviewConsentAt     DateTime?
+  aiReviewConsentVersion String?
   stage                 String           @default("DRAFT")
   version               Int              @default(1)
   reviewSummary         String?
@@ -103,11 +106,53 @@ model Project {
   messages              ProjectMessage[]
   notes                 TeamNote[]
   workItems             WorkItem[]
+  reviewJobs            ReviewJob[]
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
 
   @@index([accountId, updatedAt])
   @@index([stage, updatedAt])
+}
+
+model ReviewWorker {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  tokenHash String @unique
+  operatorId String @db.Uuid
+  operator Account @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  lastSeenAt DateTime?
+  revokedAt DateTime?
+  jobs ReviewJob[]
+}
+
+model ReviewJob {
+  id String @id @db.Uuid
+  projectId String @db.Uuid
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  provider String
+  status String @default("QUEUED")
+  commit String
+  repositoryUrl String
+  inputDigest String
+  requestSnapshot Json
+  attemptId String? @unique @db.Uuid
+  attempts Int @default(0)
+  workerId String? @db.Uuid
+  worker ReviewWorker? @relation(fields: [workerId], references: [id], onDelete: SetNull)
+  startedAt DateTime?
+  leaseExpiresAt DateTime?
+  completedAt DateTime?
+  sourceSessionId String?
+  sourceConnectionHash String?
+  evidencePaths Json?
+  coverage Json?
+  result Json?
+  errorCode String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([status, createdAt])
+  @@index([projectId, createdAt])
 }
 
 model ProjectRequest {

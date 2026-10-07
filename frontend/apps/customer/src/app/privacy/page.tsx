@@ -75,6 +75,29 @@ export default function Privacy() {
           provider. Only the resulting summary is retained; source file contents
           are not stored.
         </p>
+        <h2>AI-assisted review</h2>
+        <p>
+          When you send a new repository request or separately allow AI review in
+          your dashboard, you authorize us to send a bounded source sample and
+          your project requests to OpenAI or Anthropic through a coding-agent
+          subscription on the operator’s machine. Up to 40 eligible files from
+          your saved commit are sampled, with limits on file size and total
+          content. Sensitive and instruction files are excluded and recognizable
+          credentials are redacted; this cannot guarantee that all secrets are
+          detected. Do not commit secrets or share customer data in your repo.
+          Repository code, dependencies, and tests are not executed.
+        </p>
+        <p>
+          Source passes temporarily through our server and local worker; we do
+          not retain source snapshots in our application database. We retain the
+          private draft report, evidence paths, coverage limitations, and a
+          bounded request snapshot with your project. The operator checks and
+          edits the draft before publishing a review or quote. Provider processing
+          and retention follow the subscription account’s settings and the
+          provider’s policies. You can withdraw permission in your dashboard to
+          stop queued and running reviews; information already sent to a provider
+          cannot be recalled. Manual discussion remains available.
+        </p>
         <h2>Private GitHub access</h2>
         <p>
           Our configured GitHub App requests read-only repository contents
@@ -102,7 +125,7 @@ export default function Privacy() {
           your project conversation. Deletion requests are reviewed
           individually; agreement and transaction records may be retained to
           reconcile payments, accounting, refunds, or disputes. Deleting this
-          service’s records does not delete records held by Stripe or GitHub.
+          service’s records does not delete records held by Stripe, GitHub, OpenAI or Anthropic.
         </p>
         <p>
           Unsaved project, request, conversation, and operator form drafts may

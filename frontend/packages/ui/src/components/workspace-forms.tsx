@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Connection, Inventory, Project } from "./workspace-types";
 import { API, api, stageLabels, WorkspaceError } from "./workspace-types";
+import { ReviewAssistant, reviewText, type ReviewReport } from "./review-assistant";
 import { markNewProjectReturn, useFormDraft } from "./workspace-drafts";
 
 export type Save = (
@@ -91,6 +92,7 @@ export function NewProjectForm({
           if (await save("/v1/projects", {
             id: idField.value,
             inspectionId: report.id,
+            reviewConsent: "ai-review-v1",
             summary: values.summary,
             consent: true,
           }, "Request sent. We’ll review your repository and what you want next.")) {
@@ -156,7 +158,7 @@ export function NewProjectForm({
       <button className="button" disabled={busy || !ready || !connection?.repositories.length && !connection?.truncated}>
         {checking ? "Checking repository…" : busy ? "Sending…" : "Send for review"} <span aria-hidden="true">↗</span>
       </button>
-      <p className="portal-muted project-submit-note">By sending, you authorize a read-only review under our <a href="/privacy" target="_blank" rel="noopener noreferrer">privacy & access terms</a>. Any paid work is agreed separately.</p>
+      <p className="portal-muted project-submit-note">By sending, you authorize read-only, AI-assisted review using OpenAI or Anthropic under our <a href="/privacy" target="_blank" rel="noopener noreferrer">privacy & access terms</a>. Any paid work is agreed separately.</p>
     </form>
   );
 }
@@ -273,6 +275,8 @@ export function OperatorForms({
   busy: boolean;
 }) {
   const [tab, setTab] = useState<"review" | "proposal" | "progress">("review");
+  const [pendingImport, setPendingImport] = useState<{ report: ReviewReport; target: "review" | "proposal" } | null>(null);
+  const [importNotice, setImportNotice] = useState("");
   const prefix = `/v1/operator/projects/${project.id}`;
   const operatorFormRef = useRef<HTMLFormElement>(null);
   const operatorDraft = useFormDraft(
@@ -280,8 +284,26 @@ export function OperatorForms({
     accountId,
     `operator:${project.id}:${tab}`,
   );
+  useEffect(() => {
+    if (!pendingImport || !operatorFormRef.current || tab !== pendingImport.target) return;
+    const r = pendingImport.report;
+    const values = pendingImport.target === "review" ? { summary: reviewText(r) } : { scope: r.scope, acceptance: r.acceptance, assumptions: r.assumptions };
+    const entries = Object.entries(values).map(([name, value]) => ({ field: operatorFormRef.current!.elements.namedItem(name) as HTMLTextAreaElement, value }));
+    if (entries.some(({ field, value }) => (field.value ? field.value + "\n\n" + value : value).length > field.maxLength)) {
+      // Explicit user import: preserve the complete existing draft when there is no room.
+      setImportNotice("There isn’t room to append the full draft. Shorten your current form, then add it again.");
+    } else {
+      for (const { field, value } of entries) field.value = field.value ? field.value + "\n\n" + value : value;
+      operatorDraft.capture();
+      setImportNotice("Added to your editable draft below. Check it before publishing.");
+      entries[0]?.field.focus();
+    }
+    setPendingImport(null);
+  }, [pendingImport, tab, operatorDraft]);
   return (
     <section id="operator-tools" className="portal-card operator-tools">
+      <ReviewAssistant project={project} save={save} busy={busy} onApply={(report, target) => { setTab(target); setPendingImport({ report, target }); }} />
+      {importNotice && <p role="status" className="portal-notice">{importNotice}</p>}
       <p className="portal-kicker">PROJECT TEAM</p>
       <h2>Keep the customer in the loop.</h2>
       <div className="portal-tabs" aria-label="Team actions">

@@ -80,6 +80,8 @@ export interface Inventory {
   limitations: string[];
 }
 export interface Project extends ProjectListItem {
+  aiReviewConsentAt?: string | null;
+  aiReviewConsentVersion?: string | null;
   version: number;
   summary: string;
   platform: string;

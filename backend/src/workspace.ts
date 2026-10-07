@@ -15,6 +15,7 @@ import type { PaymentProvider } from "./stripe-provider.js";
 import { isAppOrigin, type Env } from "./config.js";
 import { AppError } from "./shared/errors.js";
 import { accountFromRequest } from "./accounts.js";
+import { REVIEW_POLICY } from "./reviews/types.js";
 
 const reference = z
   .union([
@@ -214,6 +215,7 @@ export async function registerWorkspace(
       z.object({
         id: z.uuid(),
         inspectionId: z.uuid(),
+        reviewConsent: z.literal(REVIEW_POLICY).optional(),
         summary: z.string().trim().min(10).max(5000),
         consent: z.literal(true),
       }).strict(),
@@ -263,6 +265,7 @@ export async function registerWorkspace(
             contactEmail: active.email ?? "",
             platform: "GitHub",
             summary: input.summary,
+            ...(input.reviewConsent ? { aiReviewConsentAt: new Date(), aiReviewConsentVersion: REVIEW_POLICY } : {}),
             repositoryUrl: report.url,
             inspectionReport: inspection.report ?? Prisma.JsonNull,
             stage: "IN_REVIEW",

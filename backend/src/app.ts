@@ -22,6 +22,7 @@ import {
 import { registerCustomerAuth, lockAccount } from "./customer-auth.js";
 import { ResendAccountEmail, type AccountEmailProvider } from "./account-email.js";
 import { GoogleOidcProvider, type GoogleProvider } from "./google-provider.js";
+import { registerReviews } from "./reviews/routes.js";
 import { registerWorkspace } from "./workspace.js";
 import { StripeProvider, type PaymentProvider } from "./stripe-provider.js";
 import { clientRateLimitKey } from "./proxy-trust.js";
@@ -727,6 +728,7 @@ export async function buildApp(
     session,
     paymentProvider: options.paymentProvider ?? new StripeProvider(env),
   });
+  await registerReviews(app, { prisma, env, github });
   app.addHook("onClose", () => prisma.$disconnect());
   return app;
 }

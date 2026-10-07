@@ -4,6 +4,7 @@ import { useEffect, type RefObject } from "react";
 const PREFIX = "m8-workspace-draft:";
 const TTL = 60 * 60 * 1000;
 const CONNECT_RETURN = "m8-new-project-return:";
+const PROJECT_CONNECT_RETURN = "m8-project-connect-return:";
 const START_RETURN = "m8-start-after-signin";
 
 export function markStartProjectIntent() {
@@ -31,6 +32,18 @@ export function consumeNewProjectReturn(accountId: string) {
     sessionStorage.removeItem(key);
     return expires > Date.now();
   } catch { return false; }
+}
+
+export function markProjectConnectReturn(accountId: string, projectId: string) {
+  try { sessionStorage.setItem(`${PROJECT_CONNECT_RETURN}${accountId}`, JSON.stringify({ projectId, expires: Date.now() + TTL })); } catch { /* Optional storage. */ }
+}
+export function consumeProjectConnectReturn(accountId: string): string | null {
+  try {
+    const key = `${PROJECT_CONNECT_RETURN}${accountId}`, raw = sessionStorage.getItem(key);
+    sessionStorage.removeItem(key);
+    const value = raw ? JSON.parse(raw) as { projectId: string; expires: number } : null;
+    return value && value.expires > Date.now() ? value.projectId : null;
+  } catch { return null; }
 }
 
 // Per-tab, short-lived drafts. Keys include the authenticated account and
@@ -107,6 +120,7 @@ export function useFormDraft(
 export function clearAccountDrafts(accountId: string) {
   try {
     sessionStorage.removeItem(`${CONNECT_RETURN}${accountId}`);
+    sessionStorage.removeItem(`${PROJECT_CONNECT_RETURN}${accountId}`);
     for (const key of Object.keys(sessionStorage)) {
       if (key.startsWith(`${PREFIX}${accountId}:`))
         sessionStorage.removeItem(key);
