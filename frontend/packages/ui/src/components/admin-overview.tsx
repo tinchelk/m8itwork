@@ -1,4 +1,5 @@
 "use client";
+import { isPaid, paymentNeedsReview } from "./project-payments";
 import { useState } from "react";
 import { SelectField } from "./form-controls";
 import {
@@ -85,29 +86,17 @@ export function AdminOverview({
       <div className="admin-queue">
         {queue.length ? (
           queue.map((project) => {
-            const proposal = project.proposals?.[0];
+            const proposal = project.proposals?.find(p => p.id === project.currentProposalId);
             const payments = proposal?.milestones ?? [];
-            const outstanding = payments.reduce(
-              (sum, p) =>
-                sum +
-                Math.max(
-                  0,
-                  p.amountCents -
-                    (p.disputed ||
-                    !p.attempts?.some(
-                      (a) =>
-                        a.status === "PAID" && a.mode === project.billingMode,
-                    )
-                      ? 0
-                      : p.paidCents - p.refundedCents),
-                ),
-              0,
-            );
+            const hold = payments.some(p => paymentNeedsReview(p, project.billingMode));
+            const outstanding = payments.filter(p => !isPaid(p, project.billingMode)).reduce((sum, p) => sum + Math.max(0, p.amountCents - p.paidCents + p.refundedCents), 0);
+            const financialSummary = project.stage === "CANCELLED" ? "Cancellation settled" : project.cancellationRequestedAt ? "Cancellation pending · collection paused" : hold ? "Payment needs review" : proposal?.approvedAt && payments.length ? `${money({ amountCents: outstanding, currency: proposal.currency })} outstanding` : "Scope & payment pending";
             return (
-              <button
+              <a
                 key={project.id}
                 className="admin-project-row"
-                onClick={() => select(project.id)}
+                href={`/?project=${encodeURIComponent(project.id)}`}
+                onClick={event => { if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); select(project.id); } }}
               >
                 <div>
                   <strong>{project.name}</strong>
@@ -125,12 +114,10 @@ export function AdminOverview({
                   )}
                 </div>
                 <span>
-                  {proposal?.approvedAt && payments.length
-                    ? `${money({ amountCents: outstanding, currency: proposal.currency })} outstanding`
-                    : "Scope & payment pending"}
+                  {financialSummary}
                 </span>
                 <b aria-hidden="true">↗</b>
-              </button>
+              </a>
             );
           })
         ) : (

@@ -129,6 +129,8 @@ export async function mockWorkspace(
       state.signedOut = true;
       return send({ signedOut: true });
     }
+    if (path === "/v1/operator/operations") return send({ paymentEvents: [], emailEvents: [], workers: [], failedJobs: [], processing: "Retries run every minute." });
+    if (path === "/v1/auth/notifications") return send({ enabled: true, email: "builder@example.invalid", verified: true, projectUpdates: true, operatorAlerts: state.operator ? true : null });
     if (path === "/v1/operator/review-workers") return send({ workers: [] });
     if (path.endsWith("/review-jobs")) return send({ jobs: [], onlineWorkers: 0 });
     if (path.endsWith("/ai-review-consent")) {

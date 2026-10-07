@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Message } from "./workspace-types";
+import { api, WorkspaceError, type Message } from "./workspace-types";
 import { useFormDraft } from "./workspace-drafts";
 
 interface Page {
@@ -27,12 +27,17 @@ export function ProjectConversation({
   );
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
   const reading = useRef<string | null>(null);
   const draft = useFormDraft(formRef, accountId, `conversation:${projectId}`);
   const prefix = `${team ? "/v1/operator/projects" : "/v1/projects"}/${projectId}/messages`;
-  const error = useCallback((reason: unknown) => onError(reason), [onError]);
+  const error = useCallback((reason: unknown) => {
+    setLoadError(reason instanceof Error ? reason.message : "The conversation could not be loaded. Try Refresh conversation.");
+    if (reason instanceof WorkspaceError && [401, 403].includes(reason.status)) onError(reason);
+  }, [onError]);
   const receive = useCallback((result: Page) => {
     setHistory((previous) => [
       ...new Map(
@@ -43,6 +48,7 @@ export function ProjectConversation({
       ).values(),
     ]);
     setPage(result);
+    setLoadError(null);
   }, []);
   useEffect(() => {
     let cancelled = false;
@@ -123,23 +129,26 @@ export function ProjectConversation({
         </div>
         <button
           className="portal-plain"
-          disabled={busy}
+          disabled={busy || refreshing}
           onClick={async () => {
+            setRefreshing(true);
             try {
               receive(await api<Page>(prefix));
+              setNotice("Conversation refreshed.");
             } catch (reason) {
               error(reason);
-            }
+            } finally { setRefreshing(false); }
           }}
         >
-          Refresh conversation
+          {refreshing ? "Refreshing conversation…" : "Refresh conversation"}
         </button>
       </div>
       <p className="portal-muted">
         Discuss the review, scope, and decisions here. Messages stay in this
         project; payment or scope changes still need an approved proposal.
       </p>
-      {!page ? (
+      {loadError && <p role="alert" className="portal-error">{loadError} Use Refresh conversation to retry.</p>}
+      {!page ? loadError ? <p>The conversation is currently unavailable. Your saved messages and draft are retained.</p> : (
         <p role="status">Loading conversation…</p>
       ) : (
         <>
@@ -301,8 +310,8 @@ export function ProjectConversation({
         </form>
       )}
       <p className="portal-muted">
-        Checks for new messages every 15 seconds while this page is open. No
-        email notifications yet.
+        Checks for new messages every 15 seconds while this page is open.
+        Project emails can be managed in Account settings.
       </p>
     </section>
   );

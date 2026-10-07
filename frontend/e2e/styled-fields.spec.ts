@@ -148,7 +148,7 @@ test("backoffice date calendar validates, restores ISO dates and publishes style
 });
 
 test("signup checkbox is web styled while retaining label and keyboard behavior", async ({ page }) => {
-  await mockWorkspace(page);
+  await mockWorkspace(page, { signedOut: true });
   await page.goto("/signup");
   const checkbox = page.getByRole("checkbox");
   await expect(checkbox).toBeEnabled();

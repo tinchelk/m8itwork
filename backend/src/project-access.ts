@@ -9,7 +9,24 @@ import { z } from "zod";
 import { isOperator, requireAccount } from "./accounts.js";
 import type { Env } from "./config.js";
 import { AppError } from "./shared/errors.js";
+import { financialLock } from "./financial-lock.js";
+import { enqueueUpdate, enqueueOperators } from "./notifications.js";
 
+export const terminalStages = ["WITHDRAWN", "DECLINED", "CANCELLED", "CLOSED"];
+export function assertWorkAllowed(project: Project) {
+  if (terminalStages.includes(project.stage))
+    throw new AppError(
+      409,
+      "PROJECT_TERMINAL",
+      "This project is closed. Its history remains available.",
+    );
+  if (project.cancellationRequestedAt)
+    throw new AppError(
+      409,
+      "CANCELLATION_PENDING",
+      "Resolve the cancellation before requesting more work or payment.",
+    );
+}
 export const projectId = (request: FastifyRequest) =>
   z.object({ id: z.uuid() }).passthrough().parse(request.params).id;
 export function createProjectAccess(prisma: PrismaClient, env: Env) {
@@ -32,6 +49,7 @@ export function createProjectAccess(prisma: PrismaClient, env: Env) {
     operator = false,
     tx: Prisma.TransactionClient = prisma,
   ) {
+    if (tx !== prisma) await financialLock(tx);
     const project = await tx.project.findFirst({
       where: { id, ...(operator ? {} : { accountId: account.id }) },
     });
@@ -63,6 +81,12 @@ export function createProjectAccess(prisma: PrismaClient, env: Env) {
     expected: number,
     data: Prisma.ProjectUpdateManyMutationInput = {},
   ) {
+    if (terminalStages.includes(project.stage))
+      throw new AppError(
+        409,
+        "PROJECT_TERMINAL",
+        "This project is closed. Its history remains available.",
+      );
     if (project.version !== expected) throw projectConflict();
     const result = await tx.project.updateMany({
       where: { id: project.id, version: expected, account: { closedAt: null } },
@@ -77,11 +101,36 @@ export function createProjectAccess(prisma: PrismaClient, env: Env) {
     detail: string,
     author = "TEAM",
   ) {
-    await tx.projectUpdate.create({
+    const event = await tx.projectUpdate.create({
       data: { projectId: id, title, detail, author },
     });
+    const project = await tx.project.findUniqueOrThrow({
+      where: { id },
+      select: { accountId: true },
+    });
+    await enqueueUpdate(
+      tx,
+      project.accountId,
+      id,
+      "PROJECT_UPDATE",
+      `update:${event.id}`,
+    );
+    if (author === "CUSTOMER")
+      await enqueueOperators(
+        tx,
+        env,
+        "OPERATOR_CUSTOMER_UPDATE",
+        `operator-update:${event.id}`,
+        id,
+      );
   }
-  return { actor, projectFor, touch, update };
+  const notifyOperators = (
+    tx: Prisma.TransactionClient,
+    kind: string,
+    id: string,
+    projectId: string,
+  ) => enqueueOperators(tx, env, kind, id, projectId);
+  return { actor, projectFor, touch, update, notifyOperators };
 }
 export type ProjectAccess = ReturnType<typeof createProjectAccess>;
 export const projectConflict = () =>

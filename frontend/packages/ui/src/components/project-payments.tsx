@@ -32,6 +32,7 @@ export const paymentNeedsReview = (m: PaymentMilestone, mode?: string) =>
       (m.attempts?.[0] && m.attempts[0].mode !== mode),
   );
 export const requestedPayment = (project: Project) => {
+  if (project.cancellationRequestedAt || ["WITHDRAWN", "DECLINED", "CANCELLED", "CLOSED"].includes(project.stage)) return undefined;
   const proposal = project.proposals.find(
     (p) => p.id === project.currentProposalId,
   );
@@ -149,7 +150,7 @@ export function ProjectPayments({
               const modeMismatch =
                 attempt && attempt.mode !== project.billing?.mode;
               const processing = attempt?.status === "PROCESSING";
-              const status = modeMismatch
+              const status = project.stage === "CANCELLED" && !isPaid(milestone, project.billing?.mode) ? "Collection cancelled · history retained" : project.cancellationRequestedAt && !isPaid(milestone, project.billing?.mode) ? "Collection paused · settlement pending" : modeMismatch
                 ? "Different payment mode · team review required"
                 : milestone.disputed
                   ? "Disputed · team review"
@@ -201,7 +202,7 @@ export function ProjectPayments({
                   </span>
                   {!readOnly && (
                     <div className="payment-actions">
-                      {!team && ready && (
+                      {!team && ready && !project.cancellationRequestedAt && !["CANCELLED", "WITHDRAWN", "DECLINED", "CLOSED"].includes(project.stage) && (
                         <button
                           className="button"
                           disabled={busy || saving || !project.billing?.enabled}
@@ -252,6 +253,7 @@ export function ProjectPayments({
                           </button>
                         )}
                       {team &&
+                        !project.cancellationRequestedAt &&
                         proposal.approvedAt &&
                         !milestone.releasedAt &&
                         milestones

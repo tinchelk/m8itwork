@@ -15,7 +15,7 @@ test("queues a private review, adds editable drafts and plans cost without publi
     } else await route.fulfill({ json: { jobs: job ? [job] : [], onlineWorkers: 1 } });
   });
   await page.goto("http://127.0.0.1:3131/");
-  await page.locator(".portal-project-link").filter({ hasText: "Bloom bookings" }).click();
+  await page.locator(".admin-project-row").filter({ hasText: "Bloom bookings" }).click();
   await page.getByRole("button", { name: "Queue review", exact: true }).click();
   await expect(page.getByText("Draft ready", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: /Open full reply from/ }).click();
@@ -50,7 +50,7 @@ test("permission is owned by the customer and can be withdrawn", async ({ page }
 test("stale AI drafts cannot be imported and manual review remains available", async ({ page }) => {
   const state = await mockWorkspace(page, { operator: true }); state.project.stage = "IN_REVIEW";
   await page.route("**/review-jobs", route => route.fulfill({ json: { onlineWorkers: 0, jobs: [{ id: "fixture", status: "SUCCEEDED", provider: "codex", commit: "a".repeat(40), stale: true, createdAt: new Date().toISOString(), result: report, coverage: { readFiles: 2, eligibleFiles: 4, limitations: ["Static sample only."] } }] } }));
-  await page.goto("http://127.0.0.1:3131/"); await page.locator(".portal-project-link").filter({ hasText: "Bloom bookings" }).click();
+  await page.goto("http://127.0.0.1:3131/"); await page.locator(".admin-project-row").filter({ hasText: "Bloom bookings" }).click();
   await expect(page.getByRole("button", { name: "Add to review draft" })).toBeDisabled();
   await expect(page.getByText(/Requests or repository evidence changed/)).toBeVisible();
   await page.getByLabel("Review summary", { exact: true }).fill("Manual review completed. Next we should agree on verified session support.");

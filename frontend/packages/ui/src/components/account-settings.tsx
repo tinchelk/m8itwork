@@ -1,8 +1,9 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { API, api } from "./workspace-types";
 import { AccountGate, CustomerPage, useCustomerAccount } from "./customer-page";
 import { AccountCards } from "./account-cards";
+import { NotificationSettings } from "./notification-settings";
 import {
   AccountClose,
   clearClosedAccountDrafts,
@@ -34,6 +35,11 @@ export function AccountSettings() {
     error: boolean;
     message: string;
   } | null>(null);
+  const passwordFeedbackRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (passwordFeedback)
+      passwordFeedbackRef.current?.scrollIntoView({ block: "nearest" });
+  }, [passwordFeedback]);
   useEffect(() => {
     const code = new URLSearchParams(window.location.search).get("google");
     Promise.resolve().then(() => {
@@ -161,6 +167,7 @@ export function AccountSettings() {
               <a href="#account-details">Account details</a>
               <a href="#payment-methods">Payment methods</a>
               <a href="#sign-in-methods">Sign-in & security</a>
+              <a href="#notifications">Email notifications</a>
               <a href="#close-account">Close account</a>
               <div className="account-support">
                 <p>Need a hand?</p>
@@ -199,6 +206,11 @@ export function AccountSettings() {
               <AccountCards
                 key={account.id}
                 accountId={account.id}
+                onExpired={customer.fail}
+              />
+              <NotificationSettings
+                key={`notifications:${account.id}`}
+                account={account}
                 onExpired={customer.fail}
               />
               <section
@@ -271,6 +283,7 @@ export function AccountSettings() {
                     )}
                     {passwordFeedback && (
                       <p
+                        ref={passwordFeedbackRef}
                         className={
                           passwordFeedback.error
                             ? "portal-error"

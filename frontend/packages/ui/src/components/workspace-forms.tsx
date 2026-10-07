@@ -1,8 +1,17 @@
 "use client";
+import {
+  conditionLabels,
+  proposalConditionDefaults,
+  stageTransitions,
+} from "./proposal-conditions";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Connection, Inventory, Project } from "./workspace-types";
 import { API, api, stageLabels, WorkspaceError } from "./workspace-types";
-import { ReviewAssistant, reviewText, type ReviewReport } from "./review-assistant";
+import {
+  ReviewAssistant,
+  reviewText,
+  type ReviewReport,
+} from "./review-assistant";
 import { markNewProjectReturn, useFormDraft } from "./workspace-drafts";
 import { SelectField } from "./form-controls";
 import { DateField } from "./date-field";
@@ -18,7 +27,11 @@ const data = (event: FormEvent<HTMLFormElement>) =>
   Object.fromEntries(new FormData(event.currentTarget));
 
 export function NewProjectForm({
-  accountId, save, busy, setWorking, onError,
+  accountId,
+  save,
+  busy,
+  setWorking,
+  onError,
 }: {
   accountId: string;
   save: Save;
@@ -36,15 +49,22 @@ export function NewProjectForm({
   const draft = useFormDraft(formRef, accountId, "new-project-v2", connection);
   useEffect(() => {
     let ignore = false;
-    void api<Connection>("/v1/session").then(result => {
-      if (!ignore) {
-        setConnection(result);
-        setConnectionError(result.connectionError);
-      }
-    }).catch(error => {
-      if (!ignore) setConnectionError(error.message);
-    }).finally(() => { if (!ignore) setLoading(false); });
-    return () => { ignore = true; };
+    void api<Connection>("/v1/session")
+      .then((result) => {
+        if (!ignore) {
+          setConnection(result);
+          setConnectionError(result.connectionError);
+        }
+      })
+      .catch((error) => {
+        if (!ignore) setConnectionError(error.message);
+      })
+      .finally(() => {
+        if (!ignore) setLoading(false);
+      });
+    return () => {
+      ignore = true;
+    };
   }, [accountId]);
 
   async function refreshRepositories() {
@@ -56,15 +76,21 @@ export function NewProjectForm({
       const result = await api<Connection>("/v1/session");
       setConnection(result);
       setConnectionError(result.connectionError);
-      setRefreshNotice(result.connectionError ? null : result.githubLogin
-        ? "Repository list refreshed."
-        : result.connectEnabled
-          ? "GitHub isn’t connected yet. Use Connect GitHub to authorize repository access."
-          : "GitHub connection is being set up. Please try again later.");
+      setRefreshNotice(
+        result.connectionError
+          ? null
+          : result.githubLogin
+            ? "Repository list refreshed."
+            : result.connectEnabled
+              ? "GitHub isn’t connected yet. Use Connect GitHub to authorize repository access."
+              : "GitHub connection is being set up. Please try again later.",
+      );
     } catch (error) {
       setConnectionError((error as Error).message);
       setRefreshNotice(null);
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   }
   function connect() {
     draft.capture();
@@ -78,40 +104,58 @@ export function NewProjectForm({
       onInput={draft.capture}
       onChange={draft.capture}
       className="portal-form simple-project-form"
-      onSubmit={async event => {
+      onSubmit={async (event) => {
         event.preventDefault();
         const form = event.currentTarget;
         const values = data(event);
-        const repositoryUrl = String(values.repositoryUrl || values.repositoryLink || "").trim();
+        const repositoryUrl = String(
+          values.repositoryUrl || values.repositoryLink || "",
+        ).trim();
         if (!ready) return;
         if (!repositoryUrl) {
           setFormError("Choose a repository or paste its GitHub link.");
-          const link = form.elements.namedItem("repositoryLink") as HTMLInputElement | null;
+          const link = form.elements.namedItem(
+            "repositoryLink",
+          ) as HTMLInputElement | null;
           const details = link?.closest("details");
           if (details) details.open = true;
           link?.focus();
           return;
         }
         setFormError(null);
-        const idField = form.elements.namedItem("draftRequestId") as HTMLInputElement;
+        const idField = form.elements.namedItem(
+          "draftRequestId",
+        ) as HTMLInputElement;
         idField.value ||= crypto.randomUUID();
         draft.capture();
         setChecking(true);
         setWorking(true);
         try {
-          const report = await api<Inventory & { id: string }>("/v1/github/inspect", { repositoryUrl });
+          const report = await api<Inventory & { id: string }>(
+            "/v1/github/inspect",
+            { repositoryUrl },
+          );
           setChecking(false);
-          if (await save("/v1/projects", {
-            id: idField.value,
-            inspectionId: report.id,
-            reviewConsent: "ai-review-v1",
-            summary: values.summary,
-            consent: true,
-          }, "Request sent. We’ll review your repository and what you want next.")) {
+          if (
+            await save(
+              "/v1/projects",
+              {
+                id: idField.value,
+                inspectionId: report.id,
+                reviewConsent: "ai-review-v1",
+                summary: values.summary,
+                consent: true,
+              },
+              "Request sent. We’ll review your repository and what you want next.",
+            )
+          ) {
             draft.clear();
           } else await refreshRepositories();
         } catch (error) {
-          if (error instanceof WorkspaceError && error.code === "GITHUB_RECONNECT")
+          if (
+            error instanceof WorkspaceError &&
+            error.code === "GITHUB_RECONNECT"
+          )
             setConnectionError(error.message);
           else onError(error);
         } finally {
@@ -123,51 +167,188 @@ export function NewProjectForm({
       <input type="hidden" name="draftRequestId" />
       <div className="project-repository-step">
         <p className="portal-kicker">01 / YOUR REPOSITORY</p>
-        {loading || refreshNotice ? <p className="portal-muted" role="status">{refreshNotice || "Loading GitHub connection…"}</p> : null}
+        {loading || refreshNotice ? (
+          <p className="portal-muted" role="status">
+            {refreshNotice || "Loading GitHub connection…"}
+          </p>
+        ) : null}
         {connected ? (
-          <p className="portal-muted">Connected as <strong>@{connection!.githubLogin}</strong></p>
+          <p className="portal-muted">
+            Connected as <strong>@{connection!.githubLogin}</strong>
+          </p>
         ) : null}
         {!loading && (!connected || connectionError) ? (
-          connection?.connectEnabled ? <a className="button outline" href={`${API}/v1/github/connect?flow=repositories`} onClick={connect}>
-            {connected ? "Reconnect GitHub" : "Connect GitHub"} <span aria-hidden="true">↗</span>
-          </a> : connection ? <p className="portal-notice">GitHub connection is being set up. Please try again later.</p> : null
+          connection?.connectEnabled ? (
+            <a
+              className="button outline"
+              href={`${API}/v1/github/connect?flow=repositories`}
+              onClick={connect}
+            >
+              {connected ? "Reconnect GitHub" : "Connect GitHub"}{" "}
+              <span aria-hidden="true">↗</span>
+            </a>
+          ) : connection ? (
+            <p className="portal-notice">
+              GitHub connection is being set up. Please try again later.
+            </p>
+          ) : null
         ) : null}
-        {!connected ? <p className="portal-muted">Read-only access. You choose which repositories to share.</p> : null}
-        {connectionError ? <p className="portal-error" role="alert">{connectionError}</p> : null}
-        {connected && !loading && !connection!.repositories.length && !connectionError ? <p className="portal-notice">No repositories shared yet. Choose your app in GitHub, then refresh below.</p> : null}
-        {connected && Boolean(connection?.repositories.length) ? <div>
-          <label htmlFor="project-repository">GitHub repository</label>
-          <SelectField id="project-repository" name="repositoryUrl" aria-label="GitHub repository" defaultValue="" placeholder="Choose your app’s repository" repository required={!connection?.truncated} disabled={busy || !ready || !connection?.repositories.length} onValueChange={() => {
-            const link = formRef.current?.elements.namedItem("repositoryLink") as HTMLInputElement | null;
-            if (link) link.value = "";
-            setFormError(null);
-          }} options={connection!.repositories.map(repo => ({ value: repo.url, label: repo.name, detail: repo.private ? "private" : "public" }))} />
-        </div> : null}
-        {connected ? <div className="project-repository-actions">
-          {connection?.installUrl ? <a href={connection.installUrl} target="_blank" rel="noopener noreferrer" onClick={draft.capture}>Choose repositories in GitHub ↗</a> : null}
-          <button type="button" className="portal-plain" disabled={busy || loading} onClick={() => void refreshRepositories()}>Refresh repositories</button>
-        </div> : <button type="button" className="portal-plain" disabled={busy || loading} onClick={() => void refreshRepositories()}>Refresh connection</button>}
-        {connected && connection?.truncated ? <details>
-          <summary>Repository not listed?</summary>
-          <label>GitHub repository link<input name="repositoryLink" type="url" autoComplete="off" spellCheck={false} maxLength={500} placeholder="https://github.com/you/your-app" disabled={busy || !ready} aria-invalid={Boolean(formError)} aria-describedby={formError ? "repository-choice-error" : undefined} onChange={event => {
-            const field = event.currentTarget.form?.elements.namedItem("repositoryUrl") as HTMLInputElement | null;
-            if (field && event.currentTarget.value.trim()) field.dispatchEvent(new CustomEvent(RESTORE_FIELD, { detail: "" }));
-            setFormError(null);
-          }} /></label>
-          <p className="portal-muted">Only repositories shared with the App can be read.</p>
-        </details> : null}
+        {!connected ? (
+          <p className="portal-muted">
+            Read-only access. You choose which repositories to share.
+          </p>
+        ) : null}
+        {connectionError ? (
+          <p className="portal-error" role="alert">
+            {connectionError}
+          </p>
+        ) : null}
+        {connected &&
+        !loading &&
+        !connection!.repositories.length &&
+        !connectionError ? (
+          <p className="portal-notice">
+            No repositories shared yet. Choose your app in GitHub, then refresh
+            below.
+          </p>
+        ) : null}
+        {connected && Boolean(connection?.repositories.length) ? (
+          <div>
+            <label htmlFor="project-repository">GitHub repository</label>
+            <SelectField
+              id="project-repository"
+              name="repositoryUrl"
+              aria-label="GitHub repository"
+              defaultValue=""
+              placeholder="Choose your app’s repository"
+              repository
+              required={!connection?.truncated}
+              disabled={busy || !ready || !connection?.repositories.length}
+              onValueChange={() => {
+                const link = formRef.current?.elements.namedItem(
+                  "repositoryLink",
+                ) as HTMLInputElement | null;
+                if (link) link.value = "";
+                setFormError(null);
+              }}
+              options={connection!.repositories.map((repo) => ({
+                value: repo.url,
+                label: repo.name,
+                detail: repo.private ? "private" : "public",
+              }))}
+            />
+          </div>
+        ) : null}
+        {connected ? (
+          <div className="project-repository-actions">
+            {connection?.installUrl ? (
+              <a
+                href={connection.installUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={draft.capture}
+              >
+                Choose repositories in GitHub ↗
+              </a>
+            ) : null}
+            <button
+              type="button"
+              className="portal-plain"
+              disabled={busy || loading}
+              onClick={() => void refreshRepositories()}
+            >
+              Refresh repositories
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="portal-plain"
+            disabled={busy || loading}
+            onClick={() => void refreshRepositories()}
+          >
+            Refresh connection
+          </button>
+        )}
+        {connected && connection?.truncated ? (
+          <details>
+            <summary>Repository not listed?</summary>
+            <label>
+              GitHub repository link
+              <input
+                name="repositoryLink"
+                type="url"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={500}
+                placeholder="https://github.com/you/your-app"
+                disabled={busy || !ready}
+                aria-invalid={Boolean(formError)}
+                aria-describedby={
+                  formError ? "repository-choice-error" : undefined
+                }
+                onChange={(event) => {
+                  const field = event.currentTarget.form?.elements.namedItem(
+                    "repositoryUrl",
+                  ) as HTMLInputElement | null;
+                  if (field && event.currentTarget.value.trim())
+                    field.dispatchEvent(
+                      new CustomEvent(RESTORE_FIELD, { detail: "" }),
+                    );
+                  setFormError(null);
+                }}
+              />
+            </label>
+            <p className="portal-muted">
+              Only repositories shared with the App can be read.
+            </p>
+          </details>
+        ) : null}
       </div>
       <div>
         <p className="portal-kicker">02 / WHAT’S NEXT</p>
-        <label htmlFor="project-request">How can we help move it forward?</label>
-        <textarea id="project-request" name="summary" required minLength={10} maxLength={5000} rows={5} disabled={busy}
-          placeholder="What do you want to fix, add, or improve? Tell us in your own words." />
+        <label htmlFor="project-request">
+          How can we help move it forward?
+        </label>
+        <textarea
+          id="project-request"
+          name="summary"
+          required
+          minLength={10}
+          maxLength={5000}
+          rows={5}
+          disabled={busy}
+          placeholder="What do you want to fix, add, or improve? Tell us in your own words."
+        />
       </div>
-      {formError ? <p id="repository-choice-error" role="alert" className="portal-error">{formError}</p> : null}
-      <button className="button" disabled={busy || !ready || !connection?.repositories.length && !connection?.truncated}>
-        {checking ? "Checking repository…" : busy ? "Sending…" : "Send for review"} <span aria-hidden="true">↗</span>
+      {formError ? (
+        <p id="repository-choice-error" role="alert" className="portal-error">
+          {formError}
+        </p>
+      ) : null}
+      <button
+        className="button"
+        disabled={
+          busy ||
+          !ready ||
+          (!connection?.repositories.length && !connection?.truncated)
+        }
+      >
+        {checking
+          ? "Checking repository…"
+          : busy
+            ? "Sending…"
+            : "Send for review"}{" "}
+        <span aria-hidden="true">↗</span>
       </button>
-      <p className="portal-muted project-submit-note">By sending, you authorize read-only, AI-assisted review using OpenAI or Anthropic under our <a href="/privacy" target="_blank" rel="noopener noreferrer">privacy & access terms</a>. Any paid work is agreed separately.</p>
+      <p className="portal-muted project-submit-note">
+        By sending, you authorize read-only, AI-assisted review using OpenAI or
+        Anthropic under our{" "}
+        <a href="/privacy" target="_blank" rel="noopener noreferrer">
+          privacy & access terms
+        </a>
+        . Any paid work is agreed separately.
+      </p>
     </form>
   );
 }
@@ -185,6 +366,7 @@ export function RequestForm({
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const draft = useFormDraft(formRef, accountId, `requests:${project.id}`);
+  const [savedOriginal, setSavedOriginal] = useState(false);
   return (
     <form
       ref={formRef}
@@ -194,7 +376,10 @@ export function RequestForm({
       onSubmit={async (event) => {
         event.preventDefault();
         const form = event.currentTarget;
+        const operation = form.elements.namedItem("id") as HTMLInputElement;
+        operation.value ||= crypto.randomUUID();
         draft.capture();
+        setSavedOriginal(false);
         if (
           await save(
             `/v1/projects/${project.id}/requests`,
@@ -204,19 +389,57 @@ export function RequestForm({
         ) {
           form.reset();
           draft.clear();
+        } else {
+          try {
+            const latest = await api<Project>(`/v1/projects/${project.id}`);
+            setSavedOriginal(
+              latest.requests.some((item) => item.id === operation.value),
+            );
+          } catch {
+            /* Keep the same retry identity until its original is confirmed. */
+          }
         }
       }}
     >
+      <input type="hidden" name="id" />
+      <label>
+        What is this request about?
+        <SelectField
+          name="purpose"
+          aria-label="Request purpose"
+          defaultValue="ADDITION"
+          options={[
+            { value: "ADDITION", label: "Something to add or improve" },
+            {
+              value: "CLARIFICATION",
+              label: "A question about the agreed work",
+            },
+            ...(project.proposals.some((p) => p.approvedAt)
+              ? [
+                  {
+                    value: "DEFECT",
+                    label: "A failure of an agreed acceptance check",
+                  },
+                ]
+              : []),
+          ]}
+        />
+      </label>
       <div className="portal-form-row">
         <label>
           Request type
-          <SelectField name="kind" aria-label="Request type" defaultValue="ISSUE" options={[
+          <SelectField
+            name="kind"
+            aria-label="Request type"
+            defaultValue="ISSUE"
+            options={[
               ["ISSUE", "Issue / bug"],
               ["FEATURE", "Feature request"],
               ["SUGGESTION", "Suggestion"],
               ["PRD", "PRD / requirements"],
               ["QUESTION", "Question / scope change"],
-            ].map(([value, label]) => ({ value: value!, label: label! }))} />
+            ].map(([value, label]) => ({ value: value!, label: label! }))}
+          />
         </label>
         <label>
           Title
@@ -244,7 +467,9 @@ export function RequestForm({
         Reference link <span className="portal-muted">(optional)</span>
         <input
           name="referenceUrl"
-          type="url" autoComplete="off" spellCheck={false}
+          type="url"
+          autoComplete="off"
+          spellCheck={false}
           maxLength={500}
           placeholder="https://"
         />
@@ -255,13 +480,41 @@ export function RequestForm({
       </p>
       {["BUILDING", "VERIFYING", "COMPLETE"].includes(project.stage) && (
         <p className="portal-notice">
-          Additional work is scoped separately as a follow-on project. Your
-          current scope and progress stay as agreed.
+          Suspected failures of agreed checks are assessed against your included
+          aftercare. Additions are scoped separately. Reporting a defect does
+          not automatically create a charge or change the agreed scope.
         </p>
       )}
       <button className="button" disabled={busy}>
         {busy ? "Saving…" : "Add request"}
       </button>
+      <p className="portal-muted">
+        If saving is interrupted, retry the same request. We will check whether
+        it was already saved.
+      </p>
+      {savedOriginal && (
+        <>
+          <p role="status">
+            Your original request is saved. Retry to acknowledge it, or send
+            your edits as a separate request.
+          </p>
+          <button
+            className="portal-plain"
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              const field = formRef.current?.elements.namedItem(
+                "id",
+              ) as HTMLInputElement | null;
+              if (field) field.value = "";
+              setSavedOriginal(false);
+              draft.capture();
+            }}
+          >
+            Send these changes as a new request
+          </button>
+        </>
+      )}
     </form>
   );
 }
@@ -277,8 +530,17 @@ export function OperatorForms({
   save: Save;
   busy: boolean;
 }) {
-  const [tab, setTab] = useState<"review" | "proposal" | "progress">("review");
-  const [pendingImport, setPendingImport] = useState<{ report: ReviewReport; target: "review" | "proposal" } | null>(null);
+  const reviewStage = ["IN_REVIEW", "AWAITING_APPROVAL", "APPROVED"].includes(
+    project.stage,
+  );
+  const [selectedTab, setTab] = useState<"review" | "proposal" | "progress">(
+    reviewStage ? "review" : "progress",
+  );
+  const tab = reviewStage ? selectedTab : "progress";
+  const [pendingImport, setPendingImport] = useState<{
+    report: ReviewReport;
+    target: "review" | "proposal";
+  } | null>(null);
   const [importNotice, setImportNotice] = useState("");
   const prefix = `/v1/operator/projects/${project.id}`;
   const operatorFormRef = useRef<HTMLFormElement>(null);
@@ -288,42 +550,86 @@ export function OperatorForms({
     `operator:${project.id}:${tab}`,
   );
   useEffect(() => {
-    if (!pendingImport || !operatorFormRef.current || tab !== pendingImport.target) return;
+    if (
+      !pendingImport ||
+      !operatorFormRef.current ||
+      tab !== pendingImport.target
+    )
+      return;
     const r = pendingImport.report;
-    const values = pendingImport.target === "review" ? { summary: reviewText(r) } : { scope: r.scope, acceptance: r.acceptance, assumptions: r.assumptions };
-    const entries = Object.entries(values).map(([name, value]) => ({ field: operatorFormRef.current!.elements.namedItem(name) as HTMLTextAreaElement, value }));
-    if (entries.some(({ field, value }) => (field.value ? field.value + "\n\n" + value : value).length > field.maxLength)) {
+    const values =
+      pendingImport.target === "review"
+        ? { summary: reviewText(r) }
+        : {
+            scope: r.scope,
+            acceptance: r.acceptance,
+            assumptions: r.assumptions,
+          };
+    const entries = Object.entries(values).map(([name, value]) => ({
+      field: operatorFormRef.current!.elements.namedItem(
+        name,
+      ) as HTMLTextAreaElement,
+      value,
+    }));
+    if (
+      entries.some(
+        ({ field, value }) =>
+          (field.value ? field.value + "\n\n" + value : value).length >
+          field.maxLength,
+      )
+    ) {
       // Explicit user import: preserve the complete existing draft when there is no room.
-      setImportNotice("There isn’t room to append the full draft. Shorten your current form, then add it again.");
+      setImportNotice(
+        "There isn’t room to append the full draft. Shorten your current form, then add it again.",
+      );
     } else {
-      for (const { field, value } of entries) field.value = field.value ? field.value + "\n\n" + value : value;
+      for (const { field, value } of entries)
+        field.value = field.value ? field.value + "\n\n" + value : value;
       operatorDraft.capture();
-      setImportNotice("Added to your editable draft below. Check it before publishing.");
+      setImportNotice(
+        "Added to your editable draft below. Check it before publishing.",
+      );
       entries[0]?.field.focus();
     }
     setPendingImport(null);
   }, [pendingImport, tab, operatorDraft]);
   return (
     <section id="operator-tools" className="portal-card operator-tools">
-      <ReviewAssistant key={`${accountId}:${project.id}`} accountId={accountId} project={project} save={save} busy={busy} onApply={(report, target) => { setTab(target); setPendingImport({ report, target }); }} />
-      {importNotice && <p role="status" className="portal-notice">{importNotice}</p>}
+      <ReviewAssistant
+        key={`${accountId}:${project.id}`}
+        accountId={accountId}
+        project={project}
+        save={save}
+        busy={busy}
+        onApply={(report, target) => {
+          setTab(target);
+          setPendingImport({ report, target });
+        }}
+      />
+      {importNotice && (
+        <p role="status" className="portal-notice">
+          {importNotice}
+        </p>
+      )}
       <p className="portal-kicker">PROJECT TEAM</p>
       <h2>Keep the customer in the loop.</h2>
       <div className="portal-tabs" aria-label="Team actions">
-        {["review", "proposal", "progress"].map((value) => (
-          <button
-            key={value}
-            className={tab === value ? "active" : ""}
-            aria-pressed={tab === value}
-            onClick={() => setTab(value as typeof tab)}
-          >
-            {value === "review"
-              ? "Our review"
-              : value === "proposal"
-                ? "Scope & estimate"
-                : "Progress update"}
-          </button>
-        ))}
+        {(reviewStage ? ["review", "proposal", "progress"] : ["progress"]).map(
+          (value) => (
+            <button
+              key={value}
+              className={tab === value ? "active" : ""}
+              aria-pressed={tab === value}
+              onClick={() => setTab(value as typeof tab)}
+            >
+              {value === "review"
+                ? "Our review"
+                : value === "proposal"
+                  ? "Scope & estimate"
+                  : "Progress update"}
+            </button>
+          ),
+        )}
       </div>
       {tab === "review" && (
         <form
@@ -427,6 +733,14 @@ export function OperatorForms({
                   currency: values.currency,
                   deliveryDate: values.deliveryDate,
                   assumptions: values.assumptions,
+                  conditions: {
+                    responsibilities: values.responsibilities,
+                    externalCosts: values.externalCosts,
+                    ownership: values.ownership,
+                    cancellation: values.cancellation,
+                    aftercare: values.aftercare,
+                    aftercareDays: Number(values.aftercareDays),
+                  },
                   ...(paymentPlan ? { paymentPlan } : {}),
                 },
                 "Proposal published. Customer approval is required.",
@@ -469,7 +783,8 @@ export function OperatorForms({
               Project cost
               <input
                 name="amount"
-                type="number" inputMode="decimal"
+                type="number"
+                inputMode="decimal"
                 min="1"
                 max="1000000"
                 step="0.01"
@@ -478,17 +793,34 @@ export function OperatorForms({
             </label>
             <label>
               Currency
-              <SelectField name="currency" aria-label="Currency" options={["USD", "EUR", "GBP", "CAD", "AUD"].map(currency => ({ value: currency, label: currency }))} />
+              <SelectField
+                name="currency"
+                aria-label="Currency"
+                options={["USD", "EUR", "GBP", "CAD", "AUD"].map(
+                  (currency) => ({ value: currency, label: currency }),
+                )}
+              />
             </label>
           </div>
           <label>
             Payment schedule
-            <SelectField name="paymentMode" aria-label="Payment schedule" defaultValue="UPFRONT" options={[
-              { value: "UPFRONT", label: "Full payment upfront" },
-              { value: "DEPOSIT_FINAL", label: "50% deposit + 50% before handover" },
-              { value: "THREE_STAGES", label: "40% deposit + 40% build + 20% handover" },
-              { value: "CUSTOM", label: "Custom installments" },
-            ]} />
+            <SelectField
+              name="paymentMode"
+              aria-label="Payment schedule"
+              defaultValue="UPFRONT"
+              options={[
+                { value: "UPFRONT", label: "Full payment upfront" },
+                {
+                  value: "DEPOSIT_FINAL",
+                  label: "50% deposit + 50% before handover",
+                },
+                {
+                  value: "THREE_STAGES",
+                  label: "40% deposit + 40% build + 20% handover",
+                },
+                { value: "CUSTOM", label: "Custom installments" },
+              ]}
+            />
           </label>
           <details className="custom-payment-plan">
             <summary>Custom payment installments</summary>
@@ -508,7 +840,8 @@ export function OperatorForms({
                     Installment {i + 1} amount
                     <input
                       name={`paymentAmount${i}`}
-                      type="number" inputMode="decimal"
+                      type="number"
+                      inputMode="decimal"
                       min="1"
                       max="1000000"
                       step="0.01"
@@ -524,7 +857,10 @@ export function OperatorForms({
                       }
                       options={[
                         { value: "BEFORE_BUILD", label: "Before building" },
-                        { value: "BEFORE_VERIFY", label: "Before verification" },
+                        {
+                          value: "BEFORE_VERIFY",
+                          label: "Before verification",
+                        },
                         { value: "BEFORE_HANDOVER", label: "Before handover" },
                       ]}
                     />
@@ -557,6 +893,36 @@ export function OperatorForms({
             A revision creates a new proposal and requires fresh approval.
             Payment installments follow this approved version.
           </p>
+          <details className="proposal-conditions-editor">
+            <summary>
+              Responsibilities, ownership, cancellation & aftercare
+            </summary>
+            {Object.entries(proposalConditionDefaults).map(([name, value]) => (
+              <label key={name}>
+                {conditionLabels[name]}
+                <textarea
+                  aria-label={conditionLabels[name]}
+                  name={name}
+                  rows={3}
+                  minLength={20}
+                  maxLength={2000}
+                  required
+                  defaultValue={value}
+                />
+              </label>
+            ))}
+            <label>
+              Aftercare reporting window (calendar days after handover)
+              <input
+                name="aftercareDays"
+                type="number"
+                min={0}
+                max={365}
+                defaultValue={30}
+                required
+              />
+            </label>
+          </details>
           <button className="button" disabled={busy || !project.reviewSummary}>
             Publish new proposal
           </button>
@@ -594,7 +960,20 @@ export function OperatorForms({
         >
           <label>
             Project stage
-            <SelectField name="stage" aria-label="Project stage" defaultValue={project.stage} options={Object.entries(stageLabels).map(([value, label]) => ({ value, label }))} />
+            <SelectField
+              name="stage"
+              aria-label="Project stage"
+              defaultValue={project.stage}
+              options={[
+                project.stage,
+                ...(stageTransitions[project.stage] ?? []),
+              ]
+                .filter((value) => value !== "CLOSED")
+                .map((value) => ({
+                  value,
+                  label: stageLabels[value] ?? value,
+                }))}
+            />
           </label>
           <label>
             Update title

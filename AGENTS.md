@@ -2,6 +2,10 @@
 
 These instructions apply to the entire repository.
 
+## User engineering preference
+
+Use senior-engineer-level judgment by default for implementation and maintenance. Own the complete authorized outcome, design failure and recovery paths, verify tenant/payment boundaries and meaningful regressions, and distinguish implemented behavior from external acceptance. This preference is also recorded in the user's Codex guidance.
+
 ## Required fresh-eyes feature review
 
 Every feature must receive three independent reviews before it is reported complete:

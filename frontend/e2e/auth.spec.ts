@@ -10,6 +10,7 @@ async function authFixture(page: Page, emailEnabled = true) {
     const body = route.request().method() === "POST" ? route.request().postDataJSON() as Record<string, unknown> : {};
     calls.push({ path, body });
     const send = (json: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", json });
+    if (path === "/v1/auth/notifications") return send({ enabled: true, email: "builder@example.invalid", verified: true, projectUpdates: true });
     if (path === "/v1/auth/session") return send({ emailEnabled, googleEnabled: true, connectEnabled: true, account: signedIn ? { id: "email-account", displayName: "Email Builder", email: recoveryDisabled ? null : "builder@example.invalid", githubLogin: null, googleConnected: recoveryDisabled, isOperator: false } : null });
     if (path === "/v1/auth/login") { if (failLogin) { failLogin = false; return send({ error: { message: "Email or password is incorrect." } }, 401); } signedIn = true; return send({ signedIn: true }); }
     if (path === "/v1/auth/register") return send({ message: "Check your inbox to verify your email." }, 202);

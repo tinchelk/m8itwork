@@ -40,6 +40,7 @@ export interface PaymentProvider {
   dispute(
     id: string,
   ): Promise<{ paymentIntentId: string | null; held: boolean }>;
+  resolveIntent?(id: string): Promise<{ attemptId: string | null; sessionId: string | null }>;
 }
 export class StripeProvider implements PaymentProvider {
   readonly enabled: boolean;
@@ -192,5 +193,14 @@ export class StripeProvider implements PaymentProvider {
           : (dispute.payment_intent?.id ?? null),
       held: !["won", "warning_closed"].includes(dispute.status),
     };
+  }
+  async resolveIntent(id: string) {
+    const intent = await this.stripe().paymentIntents.retrieve(id);
+    const attemptId = intent.metadata?.attemptId ?? null;
+    if (!attemptId) return { attemptId: null, sessionId: null };
+    const sessions = await this.stripe().checkout.sessions.list({ payment_intent: id, limit: 2 });
+    if (sessions.has_more || sessions.data.length !== 1)
+      throw new AppError(409, "PAYMENT_IDENTITY_UNCERTAIN", "The payment needs an operator identity check.");
+    return { attemptId, sessionId: sessions.data[0]!.id };
   }
 }

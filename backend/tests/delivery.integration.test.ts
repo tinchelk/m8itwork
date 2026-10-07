@@ -44,6 +44,7 @@ describe.skipIf(!url)(
     let held = false;
     let disputeHook = async () => {};
     let disputeIntent: string | null = null;
+    let retrieveHook: (checkout: Checkout) => Promise<void> = async () => {};
     const provider: PaymentProvider = {
       enabled: true,
       mode: "test",
@@ -77,7 +78,9 @@ describe.skipIf(!url)(
       async retrieve(id) {
         const checkout = sessions.get(id);
         if (!checkout) throw new Error("unknown fixture session");
-        return { ...checkout };
+        const snapshot = { ...checkout };
+        await retrieveHook(snapshot);
+        return snapshot;
       },
       async expire(id) {
         sessions.get(id)!.status = "expired";
@@ -104,6 +107,7 @@ describe.skipIf(!url)(
       team = await actor("800001");
     });
     afterAll(async () => {
+      await prisma.paymentInbox.deleteMany({ where: { id: { in: eventIds } } });
       if (eventIds.length)
         await prisma.paymentEvent.deleteMany({
           where: { id: { in: eventIds } },
@@ -292,19 +296,89 @@ describe.skipIf(!url)(
       return checkout;
     }
     it("keeps historical invoice and refund webhooks reconciling after customer closure", async () => {
-      const { id, customer, milestones } = await agreed(); const checkout = await pay(id, customer, milestones[0]!.id);
-      const project = await prisma.project.update({ where: { id }, data: { stage: "COMPLETE" } });
-      expect((await post("/v1/auth/account/close", customer, { accountId: project.accountId, requestId: randomUUID(), confirmation: "CLOSE" })).statusCode).toBe(200);
-      expect((await post(`/v1/operator/projects/${id}/payments/${milestones[0]!.id}/expire`, team, {})).statusCode).toBe(409);
-      expect((await post(`/v1/operator/projects/${id}/payments/${milestones[0]!.id}/recover`, team, { sessionId: checkout.id })).statusCode).toBe(409);
+      const { id, customer, milestones } = await agreed();
+      const checkout = await pay(id, customer, milestones[0]!.id);
+      const project = await prisma.project.update({
+        where: { id },
+        data: { stage: "COMPLETE" },
+      });
+      expect(
+        (
+          await post(`/v1/operator/projects/${id}/handover`, team, {
+            version: project.version,
+            summary: "Completed artifact delivered and verified.",
+            artifacts: [
+              {
+                label: "Delivery",
+                url: "https://github.com/fixture/app/pull/1",
+              },
+            ],
+            checks: "Agreed checks passed in the recorded environment.",
+            instructions:
+              "Operate using the approved branch and configuration.",
+            limitations: "No known limitations in the agreed checks.",
+            deployment: "Deployment is excluded from this agreement.",
+          })
+        ).statusCode,
+      ).toBe(200);
+      expect(
+        (
+          await post("/v1/auth/account/close", customer, {
+            accountId: project.accountId,
+            requestId: randomUUID(),
+            confirmation: "CLOSE",
+          })
+        ).statusCode,
+      ).toBe(200);
+      expect(
+        (
+          await post(
+            `/v1/operator/projects/${id}/payments/${milestones[0]!.id}/expire`,
+            team,
+            {},
+          )
+        ).statusCode,
+      ).toBe(409);
+      expect(
+        (
+          await post(
+            `/v1/operator/projects/${id}/payments/${milestones[0]!.id}/recover`,
+            team,
+            { sessionId: checkout.id },
+          )
+        ).statusCode,
+      ).toBe(409);
       checkout.invoiceUrl = "https://invoice.stripe.com/i/closed-fixture";
-      expect((await event("invoice.paid", { id: "in_closed", metadata: { attemptId: checkout.attemptId } })).statusCode).toBe(200);
+      expect(
+        (
+          await event("invoice.paid", {
+            id: "in_closed",
+            metadata: { attemptId: checkout.attemptId },
+          })
+        ).statusCode,
+      ).toBe(200);
       checkout.refundedCents = 1000;
-      expect((await event("charge.refunded", { payment_intent: checkout.paymentIntentId })).statusCode).toBe(200);
-      const saved = await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: checkout.attemptId } });
-      expect(saved).toMatchObject({ status: "PAID", invoiceUrl: checkout.invoiceUrl, refundedCents: 1000 });
-      expect((await get(`/v1/operator/projects/${id}`, team)).statusCode).toBe(200);
-      expect((await prisma.project.findUniqueOrThrow({ where: { id } })).stage).toBe("COMPLETE");
+      expect(
+        (
+          await event("charge.refunded", {
+            payment_intent: checkout.paymentIntentId,
+          })
+        ).statusCode,
+      ).toBe(200);
+      const saved = await prisma.paymentAttempt.findUniqueOrThrow({
+        where: { id: checkout.attemptId },
+      });
+      expect(saved).toMatchObject({
+        status: "PAID",
+        invoiceUrl: checkout.invoiceUrl,
+        refundedCents: 1000,
+      });
+      expect((await get(`/v1/operator/projects/${id}`, team)).statusCode).toBe(
+        200,
+      );
+      expect(
+        (await prisma.project.findUniqueOrThrow({ where: { id } })).stage,
+      ).toBe("COMPLETE");
     });
     it("reconciles delayed invoice documents without duplicating a recorded payment", async () => {
       const { id, customer, milestones } = await agreed();
@@ -312,15 +386,43 @@ describe.skipIf(!url)(
       checkout.invoiceUrl = "https://invoice.stripe.com/i/fixture";
       checkout.invoicePdf = "https://invoice.stripe.com/i/fixture/pdf";
       checkout.receiptUrl = "https://pay.stripe.com/receipts/fixture";
-      const before = await prisma.projectUpdate.count({ where: { projectId: id } });
+      const before = await prisma.projectUpdate.count({
+        where: { projectId: id },
+      });
       const eventId = `evt_${randomUUID()}`;
-      for (let i = 0; i < 2; i++) expect((await event("invoice.paid", { id: "in_fixture", metadata: { attemptId: checkout.attemptId } }, { id: eventId })).statusCode).toBe(200);
-      const saved = await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: checkout.attemptId } });
-      expect(saved).toMatchObject({ status: "PAID", invoiceUrl: checkout.invoiceUrl, invoicePdf: checkout.invoicePdf, receiptUrl: checkout.receiptUrl });
-      expect(await prisma.projectUpdate.count({ where: { projectId: id } })).toBe(before);
-      expect(await prisma.paymentAttempt.count({ where: { milestoneId: milestones[0]!.id } })).toBe(1);
-      const billing = (await get("/v1/billing", customer)).json<{history:{id:string;invoiceUrl:string|null}[]}>();
-      expect(billing.history.find(row => row.id === saved.id)?.invoiceUrl).toBe(checkout.invoiceUrl);
+      for (let i = 0; i < 2; i++)
+        expect(
+          (
+            await event(
+              "invoice.paid",
+              { id: "in_fixture", metadata: { attemptId: checkout.attemptId } },
+              { id: eventId },
+            )
+          ).statusCode,
+        ).toBe(200);
+      const saved = await prisma.paymentAttempt.findUniqueOrThrow({
+        where: { id: checkout.attemptId },
+      });
+      expect(saved).toMatchObject({
+        status: "PAID",
+        invoiceUrl: checkout.invoiceUrl,
+        invoicePdf: checkout.invoicePdf,
+        receiptUrl: checkout.receiptUrl,
+      });
+      expect(
+        await prisma.projectUpdate.count({ where: { projectId: id } }),
+      ).toBe(before);
+      expect(
+        await prisma.paymentAttempt.count({
+          where: { milestoneId: milestones[0]!.id },
+        }),
+      ).toBe(1);
+      const billing = (await get("/v1/billing", customer)).json<{
+        history: { id: string; invoiceUrl: string | null }[];
+      }>();
+      expect(
+        billing.history.find((row) => row.id === saved.id)?.invoiceUrl,
+      ).toBe(checkout.invoiceUrl);
     });
     async function progress(id: string, stage: string, evidence?: string) {
       const current = await detail(id, team, true);
@@ -558,7 +660,16 @@ describe.skipIf(!url)(
       expect(
         (await event("checkout.session.completed", { id: checkout.id }))
           .statusCode,
-      ).toBe(409);
+      ).toBe(200); // Signed events are durably accepted; mismatches remain held for recovery.
+      expect(
+        await prisma.paymentInbox.count({
+          where: {
+            attemptId: checkout.attemptId,
+            processedAt: null,
+            lastError: { not: null },
+          },
+        }),
+      ).toBe(1);
       checkout.amountCents = 100000;
       const duplicateId = `evt_${randomUUID()}`;
       const calls = await Promise.all([
@@ -582,6 +693,14 @@ describe.skipIf(!url)(
       expect(
         (await detail(id, customer)).proposals[0]!.milestones[0]!.paidCents,
       ).toBe(100000);
+      expect((await progress(id, "BUILDING")).json().error.code).toBe(
+        "PAYMENT_RECONCILIATION_PENDING",
+      );
+      await prisma.paymentInbox.updateMany({
+        where: { attemptId: checkout.attemptId, processedAt: null },
+        data: { nextAttemptAt: new Date(0) },
+      });
+      await app.maintenance();
       expect((await progress(id, "BUILDING")).statusCode).toBe(200);
     });
     it("leaves unpaid completion pending and prevents concurrent double Checkout", async () => {
@@ -855,6 +974,300 @@ describe.skipIf(!url)(
           )
         ).json().error.code,
       ).toBe("WORK_INCOMPLETE");
+    });
+    it("retains a full refund arriving before the first intent mapping, even while a stale paid snapshot is in flight", async () => {
+      const { id, customer, milestones } = await agreed();
+      const checkout = await open(id, customer, milestones[0]!.id);
+      checkout.status = "complete";
+      checkout.paid = true;
+      checkout.paymentIntentId = `pi_${randomUUID()}`;
+      let release!: () => void;
+      let entered!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const reached = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      retrieveHook = async (snapshot) => {
+        if (snapshot.id === checkout.id) {
+          entered();
+          await pending;
+        }
+      };
+      const paidEvent = event("checkout.session.completed", {
+        id: checkout.id,
+      });
+      await reached;
+      retrieveHook = async () => {};
+      expect(
+        (
+          await event("charge.refunded", {
+            id: "ch_early",
+            payment_intent: checkout.paymentIntentId,
+            amount_refunded: 100000,
+          })
+        ).statusCode,
+      ).toBe(200);
+      release();
+      expect((await paidEvent).statusCode).toBe(200);
+      const state = await detail(id, customer);
+      expect(state.proposals[0]!.milestones[0]!.refundedCents).toBe(100000);
+      expect((await progress(id, "BUILDING")).statusCode).toBe(409);
+      expect(
+        await prisma.paymentInbox.count({
+          where: {
+            paymentIntentId: checkout.paymentIntentId,
+            processedAt: null,
+          },
+        }),
+      ).toBe(0);
+    });
+    it("does not acknowledge a pending completed event from a stale open provider snapshot", async () => {
+      const { id, customer, milestones } = await agreed();
+      const checkout = await open(id, customer, milestones[0]!.id);
+      const eventId = `evt_${randomUUID()}`;
+      expect(
+        (
+          await event(
+            "checkout.session.completed",
+            { id: checkout.id },
+            { id: eventId },
+          )
+        ).statusCode,
+      ).toBe(200);
+      expect(
+        await prisma.paymentEvent.findUnique({ where: { id: eventId } }),
+      ).toBeNull();
+      expect(
+        await prisma.paymentInbox.findUnique({ where: { id: eventId } }),
+      ).toMatchObject({
+        processedAt: null,
+        lastError: "PROVIDER_STATE_PENDING",
+      });
+      checkout.status = "complete";
+      checkout.paid = true;
+      checkout.paymentIntentId = `pi_${randomUUID()}`;
+      expect(
+        (
+          await event(
+            "checkout.session.completed",
+            { id: checkout.id },
+            { id: eventId },
+          )
+        ).statusCode,
+      ).toBe(200);
+      expect(
+        (await detail(id, customer)).proposals[0]!.milestones[0]!.paidCents,
+      ).toBe(100000);
+    });
+    it("requires customer settlement agreement, reconciles retained funds, and allows closure without fake completion", async () => {
+      const { id, customer, milestones } = await agreed(true);
+      await pay(id, customer, milestones[0]!.id);
+      const cancel = {
+        version: (await detail(id, customer)).version,
+        reason:
+          "We have paused this business and need to cancel the remaining development.",
+      };
+      expect(
+        (await post(`/v1/projects/${id}/cancel`, customer, cancel)).statusCode,
+      ).toBe(200);
+      expect(
+        (await post(`/v1/projects/${id}/cancel`, customer, cancel)).statusCode,
+      ).toBe(200);
+      expect((await progress(id, "BUILDING")).json().error.code).toBe(
+        "CANCELLATION_PENDING",
+      );
+      expect(
+        (
+          await post(
+            `/v1/projects/${id}/payments/${milestones[1]!.id}/checkout`,
+            customer,
+            {},
+          )
+        ).json().error.code,
+      ).toBe("COLLECTION_PAUSED");
+      const terms = {
+        summary:
+          "Retain the paid deposit for the completed assessment. Cancel the remaining development and final installment; no further amount is due.",
+        retainedCents: 40000,
+      };
+      expect(
+        (
+          await post(`/v1/operator/projects/${id}/settlement/propose`, team, {
+            version: (await detail(id, customer)).version,
+            ...terms,
+          })
+        ).statusCode,
+      ).toBe(200);
+      expect(
+        (
+          await post(`/v1/operator/projects/${id}/settle`, team, {
+            version: (await detail(id, customer)).version,
+            ...terms,
+            consent: true,
+          })
+        ).json().error.code,
+      ).toBe("SETTLEMENT_AGREEMENT_REQUIRED");
+      const accept = {
+        version: (await detail(id, customer)).version,
+        consent: true,
+      };
+      expect(
+        (await post(`/v1/projects/${id}/settlement/accept`, customer, accept))
+          .statusCode,
+      ).toBe(200);
+      expect(
+        (await post(`/v1/projects/${id}/settlement/accept`, customer, accept))
+          .statusCode,
+      ).toBe(200);
+      expect(
+        (
+          await post(`/v1/operator/projects/${id}/settle`, team, {
+            version: (await detail(id, customer)).version,
+            ...terms,
+            consent: true,
+          })
+        ).statusCode,
+      ).toBe(200);
+      const closed = await detail(id, customer);
+      expect(closed.stage).toBe("CANCELLED");
+      expect(closed.proposals[0]!.milestones[1]!.paidCents).toBe(0);
+      const accountId = (
+        await prisma.project.findUniqueOrThrow({ where: { id } })
+      ).accountId;
+      expect(
+        (
+          await post("/v1/auth/account/close", customer, {
+            accountId,
+            requestId: randomUUID(),
+            confirmation: "CLOSE",
+          })
+        ).statusCode,
+      ).toBe(200);
+    });
+    it("rejects settlement with open collection and retains agreed conditions, handover and separate acceptance", async () => {
+      const { id, customer, milestones } = await agreed();
+      const checkout = await pay(id, customer, milestones[0]!.id);
+      await progress(id, "BUILDING");
+      await progress(id, "VERIFYING");
+      expect(
+        (
+          await progress(
+            id,
+            "COMPLETE",
+            "The agreed journeys passed on the recorded deployment and the checklist evidence is complete.",
+          )
+        ).statusCode,
+      ).toBe(200);
+      const payload = {
+        summary:
+          "Delivered the agreed working workflows and deployment changes.",
+        artifacts: [
+          {
+            label: "Delivered changes",
+            url: "https://github.com/customer/app/pull/1",
+          },
+        ],
+        checks:
+          "The signed-in flow and payment recovery passed against the agreed checks.",
+        instructions:
+          "Use the existing hosting account; run the documented migration before the next release.",
+        limitations:
+          "Deployment requires the customer's production hosting credentials; no unrelated features were changed.",
+        deployment:
+          "Verified on staging. Production deployment is excluded from this scope.",
+      };
+      expect(
+        (
+          await post(`/v1/operator/projects/${id}/handover`, team, {
+            version: (await detail(id, customer)).version,
+            ...payload,
+          })
+        ).statusCode,
+      ).toBe(200);
+      const proposal = await prisma.proposal.findFirstOrThrow({
+        where: { projectId: id },
+      });
+      expect(proposal.conditions).toMatchObject({ aftercareDays: 30 });
+      expect(
+        (await prisma.project.findUniqueOrThrow({ where: { id } })).acceptedAt,
+      ).toBeNull();
+      const requestId = randomUUID(),
+        report = {
+          id: requestId,
+          version: (await detail(id, customer)).version,
+          kind: "ISSUE",
+          purpose: "DEFECT",
+          title: "The agreed recovery check fails",
+          detail:
+            "Returning to the app after an interrupted payment does not show the status.",
+        };
+      expect(
+        (await post(`/v1/projects/${id}/requests`, customer, report))
+          .statusCode,
+      ).toBe(201);
+      expect(
+        (await post(`/v1/projects/${id}/requests`, customer, report))
+          .statusCode,
+      ).toBe(201);
+      expect(
+        await prisma.projectRequest.count({ where: { id: requestId } }),
+      ).toBe(1);
+      expect(
+        (
+          await post(`/v1/projects/${id}/requests`, customer, {
+            ...report,
+            title: "Edited request after ambiguous response",
+          })
+        ).json().error.code,
+      ).toBe("REQUEST_ID_CONFLICT");
+      expect(
+        (
+          await prisma.projectRequest.findUniqueOrThrow({
+            where: { id: requestId },
+          })
+        ).aftercareEligible,
+      ).toBe(true);
+      for (const status of [
+        "INCLUDED_CORRECTION",
+        "CORRECTION_IN_PROGRESS",
+        "CORRECTION_RESOLVED",
+      ])
+        expect(
+          (
+            await post(
+              `/v1/operator/projects/${id}/requests/${requestId}/triage`,
+              team,
+              {
+                version: (await detail(id, customer)).version,
+                status,
+                reason:
+                  "Verified against the original recovery check; the correction and repeated acceptance test are recorded here.",
+              },
+            )
+          ).statusCode,
+        ).toBe(200);
+      expect(
+        (
+          await post(`/v1/projects/${id}/accept`, customer, {
+            version: (await detail(id, customer)).version,
+            consent: true,
+          })
+        ).statusCode,
+      ).toBe(200);
+      expect(
+        (await prisma.project.findUniqueOrThrow({ where: { id } })).acceptedAt,
+      ).not.toBeNull();
+      checkout.refundedCents = 10000;
+      await event("charge.refunded", {
+        id: "ch_after_handover",
+        payment_intent: checkout.paymentIntentId,
+        amount_refunded: 10000,
+      });
+      expect(
+        (await detail(id, customer)).proposals[0]!.milestones[0]!.refundedCents,
+      ).toBe(10000);
     });
     it("records refunds and prevents stale events from reopening paid work gates", async () => {
       const { id, customer, milestones } = await agreed();

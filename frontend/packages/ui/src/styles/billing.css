@@ -243,35 +243,6 @@
 .account-method .button {
   flex-shrink: 0;
 }
-.billing-dialog {
-  width: min(460px, calc(100vw - 32px));
-  margin: auto;
-  padding: 32px;
-  border: 1px solid #607d8a;
-  border-radius: 16px;
-  background: #152c3b;
-  color: #eff3f0;
-  box-shadow: 0 24px 100px #0009;
-}
-.billing-dialog::backdrop {
-  background: #071019c9;
-  backdrop-filter: blur(5px);
-}
-.billing-dialog h2 {
-  font-size: 27px;
-  margin: 22px 0 12px;
-}
-.billing-dialog p {
-  font-size: 14px;
-  color: #c4d4dd;
-  line-height: 1.8;
-}
-.billing-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 24px;
-}
 .billing-card-symbol {
   width: 48px;
   height: 48px;

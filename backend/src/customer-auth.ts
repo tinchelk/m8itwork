@@ -1,3 +1,4 @@
+import { assertIdentityOpen, identityKey } from "./identity-fences.js";
 import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient, type ReviewSession } from "@prisma/client";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -95,8 +96,9 @@ export async function registerCustomerAuth(app: FastifyInstance, options: {
     origin(request); emailAvailable();
     const input = credentials.extend({ password: passwordSchema, displayName: z.string().trim().min(1).max(100), consent: z.literal(true) }).parse(request.body);
     await throttle(request, reply, "registration", input.email, 3);
-    const existing = await prisma.account.findUnique({ where: { email: input.email } });
     const passwordHash = await hashPassword(input.password);
+    if (await prisma.closedIdentity.findUnique({ where: { id: identityKey("email", input.email) } })) return reply.code(202).send({ message: "Check your inbox to verify your email. If you already have an account, sign in or reset your password." });
+    const existing = await prisma.account.findUnique({ where: { email: input.email } });
     let account = existing;
     if (!account) {
       try { account = await prisma.account.create({ data: { email: input.email, displayName: input.displayName } }); }
@@ -221,6 +223,8 @@ export async function registerCustomerAuth(app: FastifyInstance, options: {
       const finishGoogle = () => prisma.$transaction(async transaction => {
         const active = await transaction.reviewSession.findUniqueOrThrow({ where: { id: review.id } });
         if (active.oauthAttemptId !== hash(state) || active.expiresAt <= new Date()) throw new AppError(400, "OAUTH_CANCELLED", "Google sign-in was cancelled.");
+        await assertIdentityOpen(transaction, "googleId", identity.id);
+        await assertIdentityOpen(transaction, "email", identity.email);
         let account = await transaction.account.findUnique({ where: { googleId: identity.id } });
         if (link) {
           const signedIn = await transaction.accountSession.findUnique({ where: { id: cookieHash(request) ?? "" } });

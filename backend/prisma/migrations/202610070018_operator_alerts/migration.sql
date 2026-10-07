@@ -1,0 +1,4 @@
+ALTER TABLE "Account" ADD COLUMN "operatorNotifications" BOOLEAN NOT NULL DEFAULT true;
+CREATE TABLE "HealthAlert" (
+ "id" TEXT NOT NULL, "code" TEXT NOT NULL, "openedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "resolvedAt" TIMESTAMP(3), CONSTRAINT "HealthAlert_pkey" PRIMARY KEY ("id")
+);

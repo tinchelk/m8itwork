@@ -1,3 +1,4 @@
+import { assertWorkAllowed } from "./project-access.js";
 import type { PrismaClient } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -5,6 +6,8 @@ import { projectId, type ProjectAccess } from "./project-access.js";
 import { requirePaymentGate } from "./payment-rules.js";
 import { AppError } from "./shared/errors.js";
 import { accountLabel } from "./accounts.js";
+import { financialLock } from "./financial-lock.js";
+import { enqueueUpdate } from "./notifications.js";
 
 export async function registerCollaboration(
   app: FastifyInstance,
@@ -68,6 +71,7 @@ export async function registerCollaboration(
         .parse(request.body);
       const message = await prisma.$transaction(async (tx) => {
         const id = projectId(request);
+        await financialLock(tx);
         await tx.$queryRaw`SELECT "id" FROM "Project" WHERE "id" = ${id}::uuid FOR UPDATE`;
         const project = await projectFor(account, id, team, tx);
         const existing = await tx.projectMessage.findUnique({
@@ -132,6 +136,8 @@ export async function registerCollaboration(
               created.createdAt,
           },
         });
+        if (team) await enqueueUpdate(tx, project.accountId, project.id, "TEAM_REPLY", `message:${created.id}`);
+        else await access.notifyOperators(tx, "OPERATOR_CUSTOMER_REPLY", `operator-message:${created.id}`, project.id);
         return created;
       });
       return reply.code(201).send({ id: message.id });
@@ -171,6 +177,7 @@ export async function registerCollaboration(
       .parse(request.body);
     const note = await prisma.$transaction(async (tx) => {
       const id = projectId(request);
+      await financialLock(tx);
       await tx.$queryRaw`SELECT "id" FROM "Project" WHERE "id" = ${id}::uuid FOR UPDATE`;
       const project = await projectFor(account, id, true, tx);
       const saved = await tx.teamNote.upsert({
@@ -228,6 +235,7 @@ export async function registerCollaboration(
           "WORK_ID_CONFLICT",
           "Refresh before adding this work item.",
         );
+      assertWorkAllowed(project);
       if (!["APPROVED", "BUILDING", "VERIFYING"].includes(project.stage))
         throw new AppError(
           409,
@@ -280,6 +288,7 @@ export async function registerCollaboration(
       .parse(request.body);
     return prisma.$transaction(async (tx) => {
       const project = await projectFor(account, projectId(request), true, tx);
+      assertWorkAllowed(project);
       if (!["APPROVED", "BUILDING", "VERIFYING"].includes(project.stage))
         throw new AppError(
           409,

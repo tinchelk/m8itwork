@@ -12,6 +12,8 @@ describe.skipIf(!database)("account closure", () => {
     NODE_ENV: "test",
     DATABASE_URL: database,
     OPERATOR_GITHUB_IDS: "870009901",
+    STRIPE_SECRET_KEY: "sk_test_fixture_only",
+    STRIPE_WEBHOOK_SECRET: "whsec_fixture_only",
   });
   const accounts: string[] = [],
     reviews: string[] = [];
@@ -159,6 +161,84 @@ describe.skipIf(!database)("account closure", () => {
     expect(
       await prisma.accountSession.count({ where: { accountId: owner.id } }),
     ).toBe(1);
+  });
+  it("blocks closing a new completed agreement until handover publication, without requiring acceptance", async () => {
+    const owner = await actor(),
+      p = await project(owner.id, "COMPLETE"),
+      quote = await proposal(p.id, true);
+    await prisma.proposal.update({
+      where: { id: quote.id },
+      data: {
+        conditions: {
+          responsibilities:
+            "Customer access; team verifies and hands over the agreed work.",
+        },
+      },
+    });
+    await prisma.project.update({
+      where: { id: p.id },
+      data: { currentProposalId: quote.id },
+    });
+    const pending = await close(owner);
+    expect(pending.statusCode).toBe(409);
+    expect(pending.json().error.code).toBe("ACCOUNT_HANDOVER_PENDING");
+    expect(
+      (await prisma.account.findUniqueOrThrow({ where: { id: owner.id } }))
+        .closedAt,
+    ).toBeNull();
+    const published = await post(
+      `/v1/operator/projects/${p.id}/handover`,
+      {
+        version: 1,
+        summary: "Completed artifact delivered and verified.",
+        artifacts: [
+          { label: "Delivery", url: "https://github.com/fixture/app/pull/1" },
+        ],
+        checks: "Agreed checks passed in the recorded environment.",
+        instructions: "Operate using the approved branch and configuration.",
+        limitations: "No known limitations in the agreed checks.",
+        deployment: "Deployment is excluded from this agreement.",
+      },
+      operator.cookie,
+      env.ADMIN_ORIGIN,
+    );
+    // No card attempt is due in this retained fixture; handover enforces its paid gate.
+    expect(published.statusCode).toBe(409);
+    await prisma.paymentMilestone.update({
+      where: { id: quote.milestones[0]!.id },
+      data: { paidAt: new Date(), paidCents: 10000 },
+    });
+    await prisma.paymentAttempt.create({
+      data: {
+        milestoneId: quote.milestones[0]!.id,
+        status: "PAID",
+        mode: "test",
+        amountCents: 10000,
+        currency: "USD",
+      },
+    });
+    const delivered = await post(
+      `/v1/operator/projects/${p.id}/handover`,
+      {
+        version: 1,
+        summary: "Completed artifact delivered and verified.",
+        artifacts: [
+          { label: "Delivery", url: "https://github.com/fixture/app/pull/1" },
+        ],
+        checks: "Agreed checks passed in the recorded environment.",
+        instructions: "Operate using the approved branch and configuration.",
+        limitations: "No known limitations in the agreed checks.",
+        deployment: "Deployment is excluded from this agreement.",
+      },
+      operator.cookie,
+      env.ADMIN_ORIGIN,
+    );
+    expect(delivered.statusCode).toBe(200);
+    expect(
+      (await prisma.project.findUniqueOrThrow({ where: { id: p.id } }))
+        .acceptedAt,
+    ).toBeNull();
+    expect((await close(owner)).statusCode).toBe(200);
   });
   it("atomically retires all credentials, withdraws requests, cancels reviews and retains history", async () => {
     const owner = await actor(),
@@ -565,7 +645,7 @@ describe.skipIf(!database)("account closure", () => {
           if (closed) return "closed too early";
           const rows = await prisma.$queryRaw<
             { waiting: bigint }[]
-          >`SELECT count(*) AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%FROM "Project" WHERE "accountId"%'`;
+          >`SELECT count(*) AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND (query LIKE '%FROM "Project" WHERE "accountId"%' OR query LIKE '%pg_advisory_xact_lock(814721)%')`;
           return rows[0]!.waiting > 0n ? "serialized" : "starting";
         })
         .toBe("serialized");

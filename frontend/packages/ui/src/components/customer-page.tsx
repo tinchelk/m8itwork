@@ -1,14 +1,32 @@
 "use client";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import {
   api,
   type Account,
   type Auth,
   WorkspaceError,
 } from "./workspace-types";
+import { notificationReturnFragment } from "./customer-return";
 import { clearAccountDrafts } from "./workspace-drafts";
 import { WorkshopBackdrop } from "./workshop-backdrop";
 
+function subscribeHash(callback: () => void) {
+  window.addEventListener("hashchange", callback);
+  return () => window.removeEventListener("hashchange", callback);
+}
+function useContactFragment() {
+  return useSyncExternalStore(
+    subscribeHash,
+    notificationReturnFragment,
+    () => "",
+  );
+}
 export function useCustomerAccount() {
   const [auth, setAuth] = useState<Auth | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -46,7 +64,7 @@ export function useCustomerAccount() {
     [expire],
   );
   const clear = useCallback(() => {
-    setAuth(current => current ? { ...current, account: null } : null);
+    setAuth((current) => (current ? { ...current, account: null } : null));
     setError(null);
   }, []);
   async function logout() {
@@ -91,6 +109,7 @@ export function CustomerPage({
   children: ReactNode;
   error?: string | null;
 }) {
+  const contact = useContactFragment();
   return (
     <div className="workshop-shell portal-shell">
       <WorkshopBackdrop />
@@ -135,7 +154,10 @@ export function CustomerPage({
               </button>
             </>
           ) : (
-            <a className="portal-account-link" href="/login">
+            <a
+              className="portal-account-link"
+              href={`/login?return=${current}${current === "account" ? contact : ""}`}
+            >
               Sign in
             </a>
           )}
@@ -170,6 +192,8 @@ export function AccountGate({
   retry: () => void;
   current?: "account" | "billing";
 }) {
+  const contact = useContactFragment();
+  const signIn = `/login?return=${current}${current === "account" ? contact : ""}`;
   if (!loaded)
     return (
       <section className="portal-card" role="status">
@@ -186,7 +210,7 @@ export function AccountGate({
         </h1>
         <p role="alert">{error}</p>
         {error.startsWith("Your session") ? (
-          <a className="button" href={`/login?return=${current}`}>
+          <a className="button" href={signIn}>
             Sign in
           </a>
         ) : (
@@ -200,7 +224,7 @@ export function AccountGate({
     <section className="portal-card">
       <h1>Welcome back</h1>
       <p>Sign in to manage your account and billing.</p>
-      <a className="button" href={`/login?return=${current}`}>
+      <a className="button" href={signIn}>
         Sign in to your account
       </a>
     </section>

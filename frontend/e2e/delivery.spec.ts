@@ -90,7 +90,7 @@ test("customer and admin agree installments, converse, pay, track work and compl
     page.getByText("New customer message", { exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: /Bloom bookings.*New customer message/ })
+    .getByRole("link", { name: /Bloom bookings.*New customer message/ })
     .click();
   await page.getByRole("link", { name: "Conversation", exact: true }).click();
   await page
@@ -117,8 +117,10 @@ test("customer and admin agree installments, converse, pay, track work and compl
       "Customers can create and cancel recurring bookings and complete checkout.",
     );
   await page.getByLabel("Project cost", { exact: true }).fill("1250");
-  await chooseOption(page
-    .getByRole("combobox", { name: "Payment schedule", exact: true }), "DEPOSIT_FINAL");
+  await chooseOption(
+    page.getByRole("combobox", { name: "Payment schedule", exact: true }),
+    "DEPOSIT_FINAL",
+  );
   await page.getByLabel("Estimated delivery date").fill("2099-12-01");
   await page
     .getByLabel("Assumptions & conditions")
@@ -126,9 +128,11 @@ test("customer and admin agree installments, converse, pay, track work and compl
       "Starts after access and deposit payment. Final payment follows verification before handover.",
     );
   await page.getByRole("button", { name: "Publish new proposal" }).click();
-  expect(
-    state.project.proposals[0]!.milestones!.map((m) => m.amountCents),
-  ).toEqual([62500, 62500]);
+  await expect
+    .poll(() =>
+      state.project.proposals[0]?.milestones?.map((m) => m.amountCents),
+    )
+    .toEqual([62500, 62500]);
   await page
     .getByLabel("Private note", { exact: true })
     .fill("Internal: check builder export constraints before implementation.");
@@ -175,8 +179,10 @@ test("customer and admin agree installments, converse, pay, track work and compl
     .getByRole("button", { name: "Add delivery item", exact: true })
     .click();
   await page.getByText("Update this item", { exact: true }).click();
-  await chooseOption(page
-    .getByRole("combobox", { name: "Status", exact: true }), "DONE");
+  await chooseOption(
+    page.getByRole("combobox", { name: "Status", exact: true }),
+    "DONE",
+  );
   await page
     .getByLabel("Checks and result")
     .fill(
@@ -224,7 +230,9 @@ test("customer and admin agree installments, converse, pay, track work and compl
   state.operator = false;
   await page.goto(`/dashboard?project=${state.project.id}`);
   await expect(
-    page.getByText("Ready for your next chapter.", { exact: true }),
+    page.getByText("Verification finished. Your handover is being prepared.", {
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Verification & handover", exact: true }),
@@ -237,7 +245,7 @@ test("customer and admin agree installments, converse, pay, track work and compl
   if (testInfo.project.name === "desktop")
     await page.setViewportSize({ width: 1440, height: 1050 });
   await page
-    .getByRole("link", { name: "m8itwork home" })
+    .getByRole("link", { name: "m8itwork dashboard" })
     .scrollIntoViewIfNeeded();
   await page.screenshot({
     path: testInfo.outputPath(`delivery-customer-${testInfo.project.name}.png`),
@@ -308,7 +316,9 @@ test("recovers a lost message response and sends edited text as a new message", 
   await page.getByLabel("Message to the team").fill("Original scope question.");
   state.loseMessageResponse = true;
   await page.getByRole("button", { name: "Send message", exact: true }).click();
-  await expect(page.getByRole("alert").filter({ hasText: "couldn't reach" })).toBeVisible();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "couldn't reach" }),
+  ).toBeVisible();
   expect(state.messages).toHaveLength(1);
   await page
     .getByLabel("Message to the team")

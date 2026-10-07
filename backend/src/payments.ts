@@ -1,3 +1,4 @@
+import { assertWorkAllowed } from "./project-access.js";
 import { Prisma, type PaymentAttempt, type PrismaClient } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -7,6 +8,7 @@ import { paid, paidInMode } from "./payment-rules.js";
 import type { Checkout, PaymentProvider } from "./stripe-provider.js";
 import { AppError } from "./shared/errors.js";
 import type { registerBilling } from "./billing.js";
+import { financialLock } from "./financial-lock.js";
 
 export async function registerPayments(
   app: FastifyInstance,
@@ -18,7 +20,7 @@ export async function registerPayments(
     billing?: Awaited<ReturnType<typeof registerBilling>>;
   },
 ) {
-  const { prisma, access, provider } = options;
+  const { prisma, access, provider, env } = options;
   const { actor, projectFor, touch, update } = access;
   const params = (value: unknown) =>
     z.object({ milestoneId: z.uuid() }).passthrough().parse(value);
@@ -79,7 +81,8 @@ export async function registerPayments(
     validate(checkout, attempt);
     try {
       return await prisma.$transaction(async (tx) => {
-        if (event) await tx.paymentEvent.create({ data: event });
+        await financialLock(tx);
+        if (event && await tx.paymentEvent.findUnique({ where: { id: event.id } })) return { duplicate: true };
         const milestone = await tx.paymentMilestone.findUniqueOrThrow({
           where: { id: attempt.milestoneId },
           include: { proposal: true },
@@ -93,6 +96,14 @@ export async function registerPayments(
           where: { id: attempt.id },
         });
         validate(checkout, current);
+        const inbox = await tx.paymentInbox.findMany({ where: {
+          processedAt: null, ignoredAt: null, mode: current.mode,
+          OR: [{ attemptId: current.id }, ...(checkout.paymentIntentId ? [{ paymentIntentId: checkout.paymentIntentId }] : [])],
+        } });
+        // Fold verified monotone refund/hold facts in the same transaction as
+        // the first PI mapping. A pre-event snapshot cannot overwrite them.
+        const pendingHold = inbox.some(row => row.id !== event?.id &&
+          (row.type.startsWith("charge.dispute.") || (row.type === "charge.refunded" && row.refundedCents === null)));
         const nextStatus =
           current.status === "PAID" || checkout.paid
             ? "PAID"
@@ -104,6 +115,7 @@ export async function registerPayments(
         const refunded = Math.max(
           current.refundedCents,
           checkout.refundedCents,
+          ...inbox.flatMap(row => row.refundedCents === null ? [] : [row.refundedCents]),
         );
         const eventCurrent = Boolean(
           dispute && dispute.created >= current.disputeEventCreated,
@@ -117,7 +129,7 @@ export async function registerPayments(
         // Any authoritative hold wins. Every clearing path, including webhooks,
         // must have started after the last committed reconciliation.
         const held =
-          checkout.disputed === true || (eventCurrent && dispute!.held)
+          pendingHold || checkout.disputed === true || (eventCurrent && dispute!.held)
             ? true
             : observedAt > current.updatedAt.getTime() &&
                 (eventCurrent ? !dispute!.held : checkout.disputed === false)
@@ -181,6 +193,14 @@ export async function registerPayments(
                 : "Payment dispute updated",
             "Check the payment plan and speak with the team before advancing delivery.",
           );
+        const consumed = inbox.filter(row => row.id === event?.id ||
+          (row.type === "charge.refunded" && row.refundedCents !== null) || row.type === "charge.dispute.created");
+        if (event && !consumed.some(row => row.id === event.id))
+          await tx.paymentEvent.create({ data: event });
+        if (consumed.length) {
+          await tx.paymentEvent.createMany({ data: consumed.map(row => ({ id: row.id, type: row.type })), skipDuplicates: true });
+          await tx.paymentInbox.updateMany({ where: { id: { in: consumed.map(row => row.id) } }, data: { attemptId: current.id, processedAt: new Date(), leaseUntil: null, lastError: null } });
+        }
         return { status: nextStatus };
       });
     } catch (error) {
@@ -193,6 +213,67 @@ export async function registerPayments(
         return { duplicate: true };
       throw error;
     }
+  }
+  async function processInbox(id: string) {
+    const row = await prisma.paymentInbox.findUnique({ where: { id } });
+    if (!row || row.processedAt || row.ignoredAt) return;
+    const leased = await prisma.paymentInbox.updateMany({
+      where: { id, processedAt: null, ignoredAt: null, OR: [{ leaseUntil: null }, { leaseUntil: { lt: new Date() } }] },
+      data: { leaseUntil: new Date(Date.now() + 60_000), attempts: { increment: 1 } },
+    });
+    if (!leased.count) return;
+    try {
+      let intentId = row.paymentIntentId;
+      let dispute: { held: boolean; created: number; observedAt: number } | undefined;
+      if (row.type.startsWith("charge.dispute.")) {
+        const observedAt = Date.now(), state = await provider.dispute(row.objectId);
+        intentId = state.paymentIntentId;
+        dispute = { held: state.held, created: row.eventCreated, observedAt };
+      }
+      if (intentId !== row.paymentIntentId) await prisma.$transaction(async tx => { await financialLock(tx); await tx.paymentInbox.updateMany({ where: { id, processedAt: null, ignoredAt: null }, data: { paymentIntentId: intentId } }); });
+      let attempt = await prisma.paymentAttempt.findFirst({ where: { OR: [
+        ...(row.attemptId ? [{ id: row.attemptId }] : []),
+        ...(intentId ? [{ stripePaymentIntentId: intentId }] : []),
+        ...(row.sessionId ? [{ stripeSessionId: row.sessionId }] : []),
+      ] } });
+      let sessionId = attempt?.stripeSessionId ?? row.sessionId;
+      if (!attempt && intentId && provider.resolveIntent) {
+        const identity = await provider.resolveIntent(intentId);
+        if (!identity.attemptId) {
+          await prisma.paymentInbox.update({ where: { id }, data: { ignoredAt: new Date(), leaseUntil: null, lastError: null } });
+          return;
+        }
+        attempt = await prisma.paymentAttempt.findUnique({ where: { id: identity.attemptId } });
+        sessionId = identity.sessionId;
+      }
+      if (attempt) await prisma.$transaction(async tx => {
+        await financialLock(tx);
+        await tx.paymentInbox.updateMany({ where: { id, processedAt: null, ignoredAt: null }, data: { attemptId: attempt.id, paymentIntentId: intentId } });
+      });
+      if (!attempt || !sessionId) {
+        if (!intentId && !row.attemptId) {
+          await prisma.paymentInbox.update({ where: { id }, data: { ignoredAt: new Date(), leaseUntil: null } });
+          return;
+        }
+        throw new AppError(409, "PAYMENT_MAPPING_PENDING", "The payment's application mapping is pending.");
+      }
+      const checkout = await provider.retrieve(sessionId);
+      if (intentId && checkout.paymentIntentId !== intentId)
+        throw new AppError(409, "PAYMENT_IDENTITY_UNCERTAIN", "The payment intent needs an identity check.");
+      if ((["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(row.type) && checkout.status === "open") || (row.type === "invoice.paid" && !checkout.invoiceUrl && !checkout.invoicePdf)) throw new AppError(409, "PROVIDER_STATE_PENDING", "The provider's current payment details have not caught up with this notification.");
+      await reconcile(checkout, attempt, { id: row.id, type: row.type }, dispute);
+    } catch (error) {
+      const code = error instanceof AppError ? error.code : "PROVIDER_UNAVAILABLE";
+      await prisma.paymentInbox.updateMany({ where: { id, processedAt: null, ignoredAt: null }, data: {
+        leaseUntil: null, lastError: code,
+        nextAttemptAt: new Date(Date.now() + Math.min(3600_000, 15_000 * 2 ** Math.min(row.attempts, 8))),
+      } });
+    }
+  }
+  async function processPending() {
+    if (!provider.enabled) return;
+    const pending = await prisma.paymentInbox.findMany({ where: { processedAt: null, ignoredAt: null, mode: provider.mode, nextAttemptAt: { lte: new Date() } }, orderBy: { createdAt: "asc" }, take: 25 });
+    for (const row of pending) await processInbox(row.id);
   }
   app.post(
     "/v1/projects/:id/payments/:milestoneId/checkout",
@@ -208,6 +289,7 @@ export async function registerPayments(
           false,
           tx,
         );
+        if (project.cancellationRequestedAt || ["WITHDRAWN", "DECLINED", "CANCELLED", "CLOSED"].includes(project.stage)) throw new AppError(409, "COLLECTION_PAUSED", "Collection is paused while this project's cancellation is resolved.");
         if (!project.currentProposalId)
           throw new AppError(
             409,
@@ -366,6 +448,7 @@ export async function registerPayments(
         .parse(request.body);
       return prisma.$transaction(async (tx) => {
         const project = await projectFor(account, projectId(request), true, tx);
+        assertWorkAllowed(project);
         await touch(tx, project, input.version);
         const milestone = await tx.paymentMilestone.findFirst({
           where: {
@@ -530,63 +613,29 @@ export async function registerPayments(
           metadata?: { attemptId?: string };
           payment_intent?: string | { id: string };
         };
-        let attempt: PaymentAttempt | null = null;
-        let dispute:
-          | { held: boolean; created: number; observedAt: number }
-          | undefined;
-        if (
-          [
-            "checkout.session.completed",
-            "checkout.session.async_payment_succeeded",
-            "checkout.session.async_payment_failed",
-            "checkout.session.expired",
-            "invoice.paid",
-          ].includes(event.type)
-        ) {
-          attempt = await prisma.paymentAttempt.findFirst({
-            where: {
-              OR: [
-                { stripeSessionId: object.id },
-                ...(object.metadata?.attemptId
-                  ? [{ id: object.metadata.attemptId }]
-                  : []),
-              ],
-            },
-          });
-          if (attempt && (event.type !== "invoice.paid" || attempt.stripeSessionId))
-            await reconcile(await provider.retrieve(event.type === "invoice.paid" ? attempt.stripeSessionId! : object.id), attempt, {
-              id: event.id,
-              type: event.type,
-            });
-        } else if (
-          event.type === "charge.refunded" ||
-          event.type === "charge.dispute.created" ||
-          event.type === "charge.dispute.closed"
-        ) {
-          let intentId =
-            typeof object.payment_intent === "string"
-              ? object.payment_intent
-              : object.payment_intent?.id;
-          if (event.type.startsWith("charge.dispute.")) {
-            const observedAt = Date.now();
-            const state = await provider.dispute(object.id);
-            intentId = state.paymentIntentId ?? undefined;
-            dispute = { held: state.held, created: event.created, observedAt };
-          }
-          if (intentId)
-            attempt = await prisma.paymentAttempt.findUnique({
-              where: { stripePaymentIntentId: intentId },
-            });
-          if (attempt?.stripeSessionId)
-            await reconcile(
-              await provider.retrieve(attempt.stripeSessionId),
-              attempt,
-              { id: event.id, type: event.type },
-              dispute,
-            );
-        }
+        if (!["checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed", "checkout.session.expired", "invoice.paid", "charge.refunded", "charge.dispute.created", "charge.dispute.closed"].includes(event.type)) return { received: true };
+        const intentId = typeof object.payment_intent === "string" ? object.payment_intent : object.payment_intent?.id;
+        const parsedAttempt = z.uuid().safeParse(object.metadata?.attemptId);
+        const known = await prisma.paymentAttempt.findFirst({ where: { OR: [
+          { stripeSessionId: object.id },
+          ...(intentId ? [{ stripePaymentIntentId: intentId }] : []),
+          ...(parsedAttempt.success ? [{ id: parsedAttempt.data }] : []),
+        ] } });
+        const refunded = (object as { amount_refunded?: unknown }).amount_refunded;
+        await prisma.$transaction(async tx => {
+          await financialLock(tx);
+          await tx.paymentInbox.upsert({ where: { id: event.id }, update: {}, create: {
+            id: event.id, type: event.type, mode: provider.mode, objectId: object.id ?? intentId ?? event.id,
+            paymentIntentId: intentId ?? null, attemptId: known?.id ?? null,
+            sessionId: event.type.startsWith("checkout.session.") ? object.id : known?.stripeSessionId ?? null,
+            refundedCents: Number.isSafeInteger(refunded) && Number(refunded) >= 0 && Number(refunded) <= 2_147_483_647 ? Number(refunded) : null,
+            eventCreated: event.created,
+          } });
+        });
+        if (!env.RECOVERY_MODE) await processInbox(event.id);
         return { received: true };
       },
     );
   });
+  return { processPending, reconcile, processInbox };
 }

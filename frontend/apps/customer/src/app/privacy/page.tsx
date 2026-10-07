@@ -29,8 +29,7 @@ export default function Privacy() {
           salted password hash. Passwords and account-link tokens are not stored
           as plain text or in browser drafts. Google sign-in uses your verified
           email, profile name, and Google account ID. GitHub sign-in uses
-          GitHub’s numeric user ID, username, and profile name. Repository
-          connection is optional after creating an account. We store your
+          GitHub’s numeric user ID, username, and profile name. Creating an account does not grant repository access. New project intake connects a selected repository and records what you want next. We store your
           projects, contact email, issues, suggestions, requirements, repository
           summaries, proposals, approvals, conversations, delivery checklists,
           verification evidence, and progress updates to review and deliver the
@@ -50,6 +49,9 @@ export default function Privacy() {
           an identity sign-in request; we do not request access to your Gmail or
           Drive.
         </p>
+        <h2>Project notifications</h2>
+        <p>Resend also delivers generic project updates and verified notification-email links. Messages include an authenticated dashboard link; private requests, repository source, team notes and provider login codes are not included. You can verify a separate notification address and control project emails in Account without changing your sign-in or recovery identity. Signing out does not stop these emails; disabling updates or closing your account does. Security and explicitly requested account emails remain separate.</p>
+        <p>Notification verification links expire after 30 minutes. We retain delivery identifiers, destination, kind, retry status and timestamps to prevent duplicate sends and recover failures. Verification links are encrypted while awaiting delivery and cleared afterward. Sent or skipped delivery records are cleared after 90 days. Project history, proposal conditions, repository revisions, cancellation agreements, handover and acceptance records remain with the project.</p>
         <h2>Payments</h2>
         <p>
           For an agreed project, Stripe Checkout handles card details on
@@ -131,7 +133,7 @@ export default function Privacy() {
           devices, retires repository credentials and recovery links held by
           this service, withdraws unagreed requests and stops queued or running
           reviews. Agreed work, pending payments or disputes need a team check
-          first. Project and financial records remain with the team. Closing
+          first. Project and financial records remain with the team. Closed identities and hashed retired identity identifiers are retained to prevent restoring an old backup from reopening a closed account. Closing
           does not delete GitHub repositories, uninstall the GitHub App, refund
           payments or remove payment methods stored by Stripe; you can remove
           saved cards before closing. Contact hello@m8itwork.com about retained
@@ -148,7 +150,7 @@ export default function Privacy() {
           expire independently, so a customer can still read project history
           when repository access needs reconnecting. Signing out revokes the
           current account session. A draft may be stored in this tab for up to
-          24 hours to preserve it when you connect GitHub; a successful
+          one hour, tied to your signed-in account, to preserve it when you connect GitHub; a successful
           submission clears it. Submitted briefs and workspace records are
           retained while discussing or delivering the project. To request
           deletion, email{" "}
@@ -172,8 +174,8 @@ export default function Privacy() {
           The preliminary report is not a security audit, executed test result,
           or binding delivery quote.
         </p>
-        <a className="button" href="/#review">
-          Back to your brief <span aria-hidden="true">↗</span>
+        <a className="button" href="/dashboard">
+          Back to your dashboard <span aria-hidden="true">↗</span>
         </a>
       </main>
     </div>

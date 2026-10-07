@@ -25,7 +25,14 @@ import {
   requestedPayment,
 } from "./project-payments";
 import { ProjectDelivery, TeamNotes } from "./project-delivery";
-import { markProjectConnectReturn, consumeProjectConnectReturn, clearAccountDrafts, consumeNewProjectReturn, consumeStartProjectIntent, markStartProjectIntent } from "./workspace-drafts";
+import {
+  markProjectConnectReturn,
+  consumeProjectConnectReturn,
+  clearAccountDrafts,
+  consumeNewProjectReturn,
+  consumeStartProjectIntent,
+  markStartProjectIntent,
+} from "./workspace-drafts";
 import {
   API,
   ADMIN_ORIGIN,
@@ -42,6 +49,15 @@ import {
   type ProjectListItem,
 } from "./workspace-types";
 import { CustomerAuthPanel } from "./customer-auth";
+import {
+  ProjectLifecycle,
+  RepositoryRefresh,
+  RequestTriage,
+  ProjectHandover,
+  isTerminal,
+} from "./project-completion";
+import { ProposalConditions } from "./proposal-conditions";
+import { OperationsPanel } from "./operations-panel";
 
 const nextActions: Record<string, [string, string]> = {
   DRAFT: [
@@ -73,6 +89,36 @@ const nextActions: Record<string, [string, string]> = {
     "The verification summary and handover are below. Share any follow-up questions as a request.",
   ],
 };
+const operatorNextActions: Record<string, [string, string]> = {
+  DRAFT: [
+    "Help the customer prepare the request.",
+    "Clarify the app and access in the conversation.",
+  ],
+  IN_REVIEW: [
+    "Review the app and the requested next step.",
+    "Run the review assistant or inspect the evidence, then publish your findings.",
+  ],
+  AWAITING_APPROVAL: [
+    "The customer is reviewing your proposal.",
+    "Answer questions here. A revision requires fresh approval.",
+  ],
+  APPROVED: [
+    "Confirm the first payment and prepare delivery.",
+    "Use the payment plan and agreed acceptance checks before starting work.",
+  ],
+  BUILDING: [
+    "Deliver the agreed scope.",
+    "Keep the checklist current, publish updates, and triage new requests separately.",
+  ],
+  VERIFYING: [
+    "Verify the agreed checks.",
+    "Record actual results, resolve the checklist, and request any final installment.",
+  ],
+  COMPLETE: [
+    "Prepare the handover and support aftercare.",
+    "Publish the artifacts, operating instructions and limitations. Customer acceptance is recorded separately.",
+  ],
+};
 
 export function Workspace({ admin = false }: { admin?: boolean }) {
   const [auth, setAuth] = useState<Auth | null>(null);
@@ -93,13 +139,24 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
   >(null);
   const [repoUrl, setRepoUrl] = useState("");
   const sequence = useRef(0);
+  const route = useRef("");
   const contentTitle = useRef<HTMLHeadingElement>(null);
   const prefix = team ? "/v1/operator/projects" : "/v1/projects";
   const duePayment = project ? requestedPayment(project) : undefined;
 
   const failure = useCallback((reason: unknown) => {
-    if (!(reason instanceof WorkspaceError && reason.code === "REQUEST_ALREADY_SAVED")) setSavedRequestId(null);
-    if (reason instanceof WorkspaceError && reason.status === 401 && reason.code !== "GITHUB_RECONNECT") {
+    if (
+      !(
+        reason instanceof WorkspaceError &&
+        reason.code === "REQUEST_ALREADY_SAVED"
+      )
+    )
+      setSavedRequestId(null);
+    if (
+      reason instanceof WorkspaceError &&
+      reason.status === 401 &&
+      reason.code !== "GITHUB_RECONNECT"
+    ) {
       sequence.current++;
       setAuth((value) => (value ? { ...value, account: null } : value));
       setProject(null);
@@ -124,7 +181,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
         : "We couldn't load this workspace. Please try again.",
     );
   }, []);
-  function remember(id: string | null) {
+  function remember(id: string | null, push = false, newProject = false) {
     const url = new URL(window.location.href);
     url.searchParams.delete("github");
     url.searchParams.delete("google");
@@ -133,7 +190,12 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
     else url.searchParams.delete("project");
     url.searchParams.delete("view");
     url.searchParams.delete("start");
-    window.history.replaceState(null, "", url.pathname + url.search);
+    if (newProject) url.searchParams.set("start", "1");
+    const next = url.pathname + url.search;
+    route.current = next;
+    if (push && next !== window.location.pathname + window.location.search)
+      window.history.pushState(null, "", next);
+    else window.history.replaceState(null, "", next);
   }
   async function selectProject(id: string, teamView = team) {
     const attempt = ++sequence.current;
@@ -143,7 +205,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
     setError(null);
     setRepoUrl("");
     setPaymentReturn(null);
-    remember(id);
+    remember(id, true);
     try {
       const [detail, repoConnection] = await Promise.all([
         api<Project>(
@@ -172,6 +234,15 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
     return result.projects;
   }
   useEffect(() => {
+    route.current = window.location.pathname + window.location.search;
+    const restore = () => {
+      if (route.current !== window.location.pathname + window.location.search)
+        window.location.reload();
+    };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, []);
+  useEffect(() => {
     let ignore = false;
     const requestSequence = sequence;
     const initialSequence = requestSequence.current;
@@ -188,11 +259,26 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
             "GitHub sign-in linking couldn’t be completed. You can still share repositories with this account using Connect GitHub below.",
           );
         if (!result.account && params.get("github") === "signin-required")
-          setError("Your session expired. Sign in again with the same account to return to your saved request, then connect GitHub.");
-        if (params.get("google") === "error") setError("Google sign-in wasn’t completed. Please try again.");
-        if (params.get("google") === "account-closed" || params.get("github") === "account-closed") setError("This account is closed. Contact hello@m8itwork.com for help.");
-        if (params.get("google") === "link") setError("That email already belongs to an account. Sign in with your existing method, then connect Google from Account settings.");
-        if (params.get("google") === "verify-email") setError("Create and verify an email account first, then connect Google from Account settings. This Google account cannot confirm current ownership of its email address.");
+          setError(
+            "Your session expired. Sign in again with the same account to return to your saved request, then connect GitHub.",
+          );
+        if (params.get("google") === "error")
+          setError("Google sign-in wasn’t completed. Please try again.");
+        if (
+          params.get("google") === "account-closed" ||
+          params.get("github") === "account-closed"
+        )
+          setError(
+            "This account is closed. Contact hello@m8itwork.com for help.",
+          );
+        if (params.get("google") === "link")
+          setError(
+            "That email already belongs to an account. Sign in with your existing method, then connect Google from Account settings.",
+          );
+        if (params.get("google") === "verify-email")
+          setError(
+            "Create and verify an email account first, then connect Google from Account settings. This Google account cannot confirm current ownership of its email address.",
+          );
         if (!result.account || (admin && !result.account.isOperator)) return;
         const customerReturn = !admin ? consumeCustomerReturn() : null;
         if (customerReturn && !params.has("project") && !params.has("start")) {
@@ -207,9 +293,15 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
         setProjects(list.projects);
         setListLoaded(true);
         const startAfterSignin = !teamView && consumeStartProjectIntent();
-        const newProjectReturn = !teamView && consumeNewProjectReturn(result.account.id);
-        const projectReturn = !teamView ? consumeProjectConnectReturn(result.account.id) : null;
-        if (!teamView && (startAfterSignin || params.get("start") === "1" || newProjectReturn)) {
+        const newProjectReturn =
+          !teamView && consumeNewProjectReturn(result.account.id);
+        const projectReturn = !teamView
+          ? consumeProjectConnectReturn(result.account.id)
+          : null;
+        if (
+          !teamView &&
+          (startAfterSignin || params.get("start") === "1" || newProjectReturn)
+        ) {
           setCreating(true);
           remember(null);
           requestAnimationFrame(() => contentTitle.current?.focus());
@@ -277,7 +369,15 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
       return true;
     } catch (reason) {
       onFailure?.(reason);
-      if (reason instanceof WorkspaceError && reason.code === "REQUEST_ALREADY_SAVED" && path === "/v1/projects" && typeof data === "object" && data !== null && "id" in data && typeof data.id === "string")
+      if (
+        reason instanceof WorkspaceError &&
+        reason.code === "REQUEST_ALREADY_SAVED" &&
+        path === "/v1/projects" &&
+        typeof data === "object" &&
+        data !== null &&
+        "id" in data &&
+        typeof data.id === "string"
+      )
         setSavedRequestId(data.id);
       failure(reason);
       return false;
@@ -298,11 +398,14 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
         ]);
         setProject(detail);
         setConnection(repoConnection);
-        setNotice(repoConnection
-          ? repoConnection.connectionError || (repoConnection.githubLogin
-            ? "Repository list refreshed."
-            : "GitHub isn’t connected yet. Use Connect GitHub to authorize repository access.")
-          : "Project refreshed.");
+        setNotice(
+          repoConnection
+            ? repoConnection.connectionError ||
+                (repoConnection.githubLogin
+                  ? "Repository list refreshed."
+                  : "GitHub isn’t connected yet. Use Connect GitHub to authorize repository access.")
+            : "Project refreshed.",
+        );
       } else setNotice("Dashboard refreshed.");
     } catch (reason) {
       setNotice(null);
@@ -342,7 +445,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
     setProject(null);
     setNotice(null);
     setError(null);
-    remember(null);
+    remember(null, true, true);
     requestAnimationFrame(() => contentTitle.current?.focus());
   }
   async function openOverview() {
@@ -353,7 +456,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
     setConnection(null);
     setNotice(null);
     setError(null);
-    remember(null);
+    remember(null, true);
     setBusy(true);
     try {
       await refreshList(team);
@@ -393,22 +496,52 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
         Skip to {admin ? "backoffice" : "dashboard"}
       </a>
       <header className="portal-header">
-        <a className="wordmark" href={admin ? CUSTOMER_ORIGIN : "/"} aria-label="m8itwork home">
+        <a
+          className="wordmark"
+          href={admin ? "/" : "/dashboard"}
+          aria-label={admin ? "m8itwork backoffice" : "m8itwork dashboard"}
+        >
           <span className="logo-mark">m8</span>itwork
           <span className="logo-dot">.</span>
         </a>
         <span className="portal-header-label">
           {admin ? "BACKOFFICE" : "CUSTOMER DASHBOARD"}
         </span>
-        <nav aria-label={admin ? "Backoffice navigation" : "Dashboard navigation"}>
+        <nav
+          aria-label={admin ? "Backoffice navigation" : "Dashboard navigation"}
+        >
           {auth?.account && (
             <>
-              <span className="portal-user">{auth.account.githubLogin ? `@${auth.account.githubLogin}` : auth.account.displayName || auth.account.email || "Your account"}</span>
-              {!admin && <><a className="portal-account-link" href="/billing">Billing</a><a className="portal-account-link" href="/account">Account</a></>}
+              <span className="portal-user">
+                {auth.account.githubLogin
+                  ? `@${auth.account.githubLogin}`
+                  : auth.account.displayName ||
+                    auth.account.email ||
+                    "Your account"}
+              </span>
+              {!admin && (
+                <>
+                  <a
+                    className="portal-account-link"
+                    href="/dashboard"
+                    aria-current="page"
+                  >
+                    Dashboard
+                  </a>
+                  <a className="portal-account-link" href="/billing">
+                    Billing
+                  </a>
+                  <a className="portal-account-link" href="/account">
+                    Account
+                  </a>
+                </>
+              )}
               {auth.account.isOperator && (
                 <a
                   className="portal-admin-link"
-                  href={admin ? `${CUSTOMER_ORIGIN}/dashboard` : `${ADMIN_ORIGIN}/`}
+                  href={
+                    admin ? `${CUSTOMER_ORIGIN}/dashboard` : `${ADMIN_ORIGIN}/`
+                  }
                 >
                   {admin ? "Customer dashboard" : "Backoffice"}
                 </a>
@@ -451,7 +584,15 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
         {error && (
           <p className="portal-error" role="alert">
             {error}
-            {savedRequestId ? <a href={`/dashboard?project=${encodeURIComponent(savedRequestId)}`} target="_blank" rel="noopener noreferrer">Open saved request ↗</a> : null}
+            {savedRequestId ? (
+              <a
+                href={`/dashboard?project=${encodeURIComponent(savedRequestId)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Open saved request ↗
+              </a>
+            ) : null}
             {!auth && (
               <button
                 className="portal-plain"
@@ -470,85 +611,130 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
       </div>
       {initialLoading ? (
         <main id="workspace-main" className="portal-loading">
-          <p role="status">Opening your {admin ? "backoffice" : "dashboard"}…</p>
+          <p role="status">
+            Opening your {admin ? "backoffice" : "dashboard"}…
+          </p>
         </main>
       ) : !auth?.account ? (
         <main id="workspace-main" className="portal-login">
           <div>
-            <p className="portal-kicker">{admin ? "M8ITWORK BACKOFFICE" : "A CLEAR WAY FORWARD"}</p>
-            {admin ? <h1>Make the next<br /><span>app move forward.</span></h1> : <h1>Your app’s next chapter.<br /><span>All in one place.</span></h1>}
+            <p className="portal-kicker">
+              {admin ? "M8ITWORK BACKOFFICE" : "A CLEAR WAY FORWARD"}
+            </p>
+            {admin ? (
+              <h1>
+                Make the next
+                <br />
+                <span>app move forward.</span>
+              </h1>
+            ) : (
+              <h1>
+                Your app’s next chapter.
+                <br />
+                <span>All in one place.</span>
+              </h1>
+            )}
             <p className="portal-lead">
               {admin
                 ? "Your place to review customer requests, reply, agree the work, and manage delivery."
                 : "Bring your repository, ideas, and rough edges. Follow the plan from the first review to a verified handover."}
             </p>
-            {!admin && <ol className="portal-login-steps">
-              <li>
-                <b>01</b>
-                <div>
-                  <strong>Share & tell us</strong>
-                  <span>
-                    Connect GitHub and tell us what you want to fix, add, or improve.
-                  </span>
-                </div>
-              </li>
-              <li>
-                <b>02</b>
-                <div>
-                  <strong>Review & agree</strong>
-                  <span>
-                    Our findings, a clear scope, estimated delivery, and cost.
-                  </span>
-                </div>
-              </li>
-              <li>
-                <b>03</b>
-                <div>
-                  <strong>Build & verify</strong>
-                  <span>
-                    Visible updates and checks against the agreed work.
-                  </span>
-                </div>
-              </li>
-            </ol>}
-          </div>
-          {admin ? <section className="portal-card portal-signin">
-            <span className="portal-github-icon" aria-hidden="true">
-              ↗
-            </span>
-            <h2>{admin ? "Sign in to the backoffice." : "Let’s get your project moving."}</h2>
-            <p>
-              {admin ? "Use your approved team GitHub account." : "Sign in with GitHub to open your dashboard and return to your projects."}
-            </p>
-            {auth?.connectEnabled ? (
-              <a
-                className="button"
-                href={`${API}/v1/github/connect?flow=${admin ? "admin" : "login"}`}
-              >
-                Continue with GitHub <span aria-hidden="true">↗</span>
-              </a>
-            ) : (
-              <p className="portal-notice">
-                {admin ? "Backoffice sign-in is being set up." : <>Customer sign-in is being set up. You can still <a href="/#review">send your app for review</a>.</>}
-              </p>
+            {!admin && (
+              <ol className="portal-login-steps">
+                <li>
+                  <b>01</b>
+                  <div>
+                    <strong>Share & tell us</strong>
+                    <span>
+                      Connect GitHub and tell us what you want to fix, add, or
+                      improve.
+                    </span>
+                  </div>
+                </li>
+                <li>
+                  <b>02</b>
+                  <div>
+                    <strong>Review & agree</strong>
+                    <span>
+                      Our findings, a clear scope, estimated delivery, and cost.
+                    </span>
+                  </div>
+                </li>
+                <li>
+                  <b>03</b>
+                  <div>
+                    <strong>Build & verify</strong>
+                    <span>
+                      Visible updates and checks against the agreed work.
+                    </span>
+                  </div>
+                </li>
+              </ol>
             )}
-            <p className="portal-muted">
-              {admin ? "Backoffice access is limited to approved team accounts." : "You choose which repositories the read-only App can access. No code changes are made by connecting."}
-            </p>
-            <p className="portal-muted">
-              {admin ? <a href={`${CUSTOMER_ORIGIN}/dashboard`}>Looking for your customer dashboard? ↗</a> : "Starting a project is free. Any paid assessment or development is scoped and agreed separately."}
-            </p>
-            <a href={`${CUSTOMER_ORIGIN}/privacy`} className="portal-muted">
-              Privacy & access terms
-            </a>
-          </section> : <CustomerAuthPanel config={auth} />}
+          </div>
+          {admin ? (
+            <section className="portal-card portal-signin">
+              <span className="portal-github-icon" aria-hidden="true">
+                ↗
+              </span>
+              <h2>
+                {admin
+                  ? "Sign in to the backoffice."
+                  : "Let’s get your project moving."}
+              </h2>
+              <p>
+                {admin
+                  ? "Use your approved team GitHub account."
+                  : "Sign in with GitHub to open your dashboard and return to your projects."}
+              </p>
+              {auth?.connectEnabled ? (
+                <a
+                  className="button"
+                  href={`${API}/v1/github/connect?flow=${admin ? "admin" : "login"}`}
+                >
+                  Continue with GitHub <span aria-hidden="true">↗</span>
+                </a>
+              ) : (
+                <p className="portal-notice">
+                  {admin ? (
+                    "Backoffice sign-in is being set up."
+                  ) : (
+                    <>
+                      Customer sign-in is being set up. You can still{" "}
+                      <a href="/#review">send your app for review</a>.
+                    </>
+                  )}
+                </p>
+              )}
+              <p className="portal-muted">
+                {admin
+                  ? "Backoffice access is limited to approved team accounts."
+                  : "You choose which repositories the read-only App can access. No code changes are made by connecting."}
+              </p>
+              <p className="portal-muted">
+                {admin ? (
+                  <a href={`${CUSTOMER_ORIGIN}/dashboard`}>
+                    Looking for your customer dashboard? ↗
+                  </a>
+                ) : (
+                  "Starting a project is free. Any paid assessment or development is scoped and agreed separately."
+                )}
+              </p>
+              <a href={`${CUSTOMER_ORIGIN}/privacy`} className="portal-muted">
+                Privacy & access terms
+              </a>
+            </section>
+          ) : (
+            <CustomerAuthPanel config={auth} />
+          )}
         </main>
       ) : admin && !auth.account.isOperator ? (
         <main id="workspace-main" className="portal-login">
           <section className="portal-card">
             <h1>The backoffice is for the team.</h1>
             <p>
-              Your customer dashboard is ready. Backoffice access is limited to approved team accounts.
+              Your customer dashboard is ready. Backoffice access is limited to
+              approved team accounts.
             </p>
             <a className="button" href={`${CUSTOMER_ORIGIN}/dashboard`}>
               Open your dashboard ↗
@@ -556,7 +742,9 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
           </section>
         </main>
       ) : (
-        <div className={`portal-layout ${!team && !project && !creating ? "dashboard-overview" : ""}`}>
+        <div
+          className={`portal-layout ${!team && !project && !creating ? "dashboard-overview" : ""}`}
+        >
           <aside className="portal-sidebar">
             <div className="portal-sidebar-title">
               <h2>{team ? "Team projects" : "Your projects"}</h2>
@@ -571,28 +759,50 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                 </button>
               )}
             </div>
-              <button
-                className="portal-project-link"
-                disabled={busy}
-                onClick={() => void openOverview()}
-              >
-                ← {team ? "All customer projects" : "Dashboard"}
-              </button>
+            <a
+              className="portal-project-link"
+              href={team ? "/" : "/dashboard"}
+              onClick={(event) => {
+                if (
+                  !event.metaKey &&
+                  !event.ctrlKey &&
+                  !event.shiftKey &&
+                  !event.altKey
+                ) {
+                  event.preventDefault();
+                  if (!busy) void openOverview();
+                }
+              }}
+            >
+              ← {team ? "All customer projects" : "Dashboard"}
+            </a>
             <nav aria-label="Projects">
               {projects.map((item) => (
-                <button
+                <a
                   key={item.id}
                   className={`portal-project-link ${project?.id === item.id ? "active" : ""}`}
-                  disabled={busy}
+                  href={`${team ? "/" : "/dashboard"}?project=${encodeURIComponent(item.id)}`}
                   aria-current={project?.id === item.id ? "page" : undefined}
-                  onClick={() => void selectProject(item.id)}
+                  onClick={(event) => {
+                    if (
+                      !event.metaKey &&
+                      !event.ctrlKey &&
+                      !event.shiftKey &&
+                      !event.altKey
+                    ) {
+                      event.preventDefault();
+                      if (!busy) void selectProject(item.id);
+                    }
+                  }}
                 >
                   <strong>{item.name}</strong>
                   <span>
                     {stageLabels[item.stage] ?? item.stage}
-                    {item.account ? ` · ${item.account.displayName || (item.account.githubLogin ? `@${item.account.githubLogin}` : "Customer")}` : ""}
+                    {item.account
+                      ? ` · ${item.account.displayName || (item.account.githubLogin ? `@${item.account.githubLogin}` : "Customer")}`
+                      : ""}
                   </span>
-                </button>
+                </a>
               ))}
             </nav>
             {listLoaded && !projects.length && (
@@ -627,10 +837,14 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
               </button>
             </div>
             {team && !project && listLoaded && <WorkerSetup />}
+
             {!listLoaded ? (
               <section className="portal-card">
                 <h1>Your projects couldn’t be loaded.</h1>
-                <p>Try again to see your saved projects and their latest progress.</p>
+                <p>
+                  Try again to see your saved projects and their latest
+                  progress.
+                </p>
                 <button className="button" onClick={refresh} disabled={busy}>
                   {busy ? "Loading projects…" : "Try again"}
                 </button>
@@ -644,7 +858,13 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                   Your repo. Your next step.
                 </h1>
                 <p className="portal-lead">
-                  Connect your app and tell us what you want next. We’ll review it and get back to you here.
+                  Connect your app and tell us what you want next. We’ll review
+                  it and get back to you here.
+                </p>
+                <p className="portal-muted">
+                  Starting a project and our initial fit review are free. We aim
+                  to reply within {auth.responseTargetWorkingDays ?? 2} working
+                  days. Any paid assessment or development is scoped separately.
                 </p>
                 <NewProjectForm
                   accountId={auth.account.id}
@@ -655,7 +875,13 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                 />
               </section>
             ) : project?.accountClosedAt ? (
-              <ClosedProject project={project} accountId={auth.account.id} onError={failure} save={save} refresh={refresh} />
+              <ClosedProject
+                project={project}
+                accountId={auth.account.id}
+                onError={failure}
+                save={save}
+                refresh={refresh}
+              />
             ) : project ? (
               <>
                 <div className="portal-project-heading">
@@ -666,7 +892,9 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                     <p className="portal-muted">
                       {project.platform} · Updated{" "}
                       {displayDate(project.updatedAt)}
-                      {team && project.contactEmail ? ` · ${project.contactEmail}` : ""}
+                      {team && project.contactEmail
+                        ? ` · ${project.contactEmail}`
+                        : ""}
                     </p>
                   </div>
                   <span
@@ -676,25 +904,71 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                   </span>
                 </div>
                 <ProjectSteps stage={project.stage} />
+                {!team &&
+                  !(
+                    auth.account.notificationVerified ??
+                    auth.account.emailVerified
+                  ) && (
+                    <p className="portal-notice">
+                      Your project history is saved here.{" "}
+                      <a href="/account#notifications">
+                        Add a notification email
+                      </a>{" "}
+                      to receive updates, or check your dashboard.
+                      {["DRAFT", "IN_REVIEW"].includes(project.stage) &&
+                        !project.cancellationRequestedAt && (
+                          <>
+                            {" "}
+                            We aim to reply within{" "}
+                            {auth.responseTargetWorkingDays ?? 2} working days.
+                          </>
+                        )}
+                    </p>
+                  )}
                 <section className="portal-next">
                   <span aria-hidden="true">↗</span>
                   <div>
                     <h2>
-                      {requestedPayment(project)
-                        ? `${duePayment!.label} needs your attention.`
-                        : nextActions[project.stage]?.[0]}
+                      {isTerminal(project.stage)
+                        ? `${stageLabels[project.stage]}. Your history is here.`
+                        : project.cancellationRequestedAt
+                          ? "Cancellation needs agreement and settlement."
+                          : team
+                            ? operatorNextActions[project.stage]?.[0]
+                            : requestedPayment(project)
+                              ? `${duePayment!.label} needs your attention.`
+                              : project.stage === "COMPLETE"
+                                ? project.acceptedAt
+                                  ? "Delivery accepted. Aftercare remains available."
+                                  : project.handover
+                                    ? "Your handover is ready to review."
+                                    : "Verification finished. Your handover is being prepared."
+                                : nextActions[project.stage]?.[0]}
                     </h2>
                     <p>
-                      {requestedPayment(project)
-                        ? `${money({ amountCents: duePayment!.amountCents, currency: project.proposals.find((p) => p.id === project.currentProposalId)!.currency })} · ${paymentGateLabels[duePayment!.dueWhen]}. Review the payment status and next step below.`
-                        : nextActions[project.stage]?.[1]}
+                      {isTerminal(project.stage)
+                        ? "Start a new project for further work. No future installments are collected for this closed project."
+                        : project.cancellationRequestedAt
+                          ? "Use the cancellation controls below. Payment collection and delivery progression are paused."
+                          : team
+                            ? operatorNextActions[project.stage]?.[1]
+                            : requestedPayment(project)
+                              ? `${money({ amountCents: duePayment!.amountCents, currency: project.proposals.find((p) => p.id === project.currentProposalId)!.currency })} · ${paymentGateLabels[duePayment!.dueWhen]}. Review the payment status and next step below.`
+                              : project.stage === "COMPLETE"
+                                ? project.handover
+                                  ? "Review artifacts, actual check results and operating instructions below. Report agreed-check failures for aftercare assessment."
+                                  : "The team will publish your artifacts and operating instructions here. Acceptance is still pending."
+                                : nextActions[project.stage]?.[1]}
                     </p>
                   </div>
                   {project.stage === "DRAFT" && !team && (
                     <button
                       className="button"
                       disabled={
-                        busy || (!project.repositoryUrl && !project.demoUrl && !project.accessNote)
+                        busy ||
+                        (!project.repositoryUrl &&
+                          !project.demoUrl &&
+                          !project.accessNote)
                       }
                       onClick={() =>
                         void save(
@@ -727,16 +1001,36 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                   <a href="#payments">Payments</a>
                   <a href="#delivery">Delivery</a>
                 </nav>
-                {team && (
-                  <OperatorForms
-                    key={project.id}
-                    project={project}
-                    accountId={auth.account.id}
-                    save={save}
-                    busy={busy}
-                  />
+                {!isTerminal(project.stage) &&
+                  !project.cancellationRequestedAt &&
+                  team && (
+                    <OperatorForms
+                      key={project.id}
+                      project={project}
+                      accountId={auth.account.id}
+                      save={save}
+                      busy={busy}
+                    />
+                  )}
+                {!team && !isTerminal(project.stage) && (
+                  <AiReviewConsent project={project} save={save} busy={busy} />
                 )}
-                {!team && <AiReviewConsent project={project} save={save} busy={busy} />}
+                <ProjectHandover
+                  key={`handover:${project.id}`}
+                  project={project}
+                  team={team}
+                  accountId={auth.account.id}
+                  busy={busy}
+                  save={save}
+                />
+                <ProjectLifecycle
+                  key={`lifecycle:${project.id}`}
+                  project={project}
+                  team={team}
+                  busy={busy}
+                  save={save}
+                  refresh={refresh}
+                />
                 <div className="portal-project-grid">
                   <div className="portal-main-column">
                     <ProjectConversation
@@ -779,12 +1073,58 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                           inventory={project.inspectionReport}
                         />
                       )}
-                      {project.stage !== "DRAFT" && !team && project.repositoryUrl && <div className="portal-connect">
-                        <h3>Repository access</h3>
-                        <p className="portal-muted">{connection?.githubLogin && !connection.connectionError ? `Connected as @${connection.githubLogin}.` : "Reconnect GitHub so we can review your saved repository. Your project and saved commit stay the same."}</p>
-                        {connection?.connectionError && <p className="portal-notice">{connection.connectionError}</p>}
-                        {connection?.connectEnabled && <div className="portal-connection-actions"><a className="portal-link-button" href={`${API}/v1/github/connect?flow=repositories`} onClick={() => markProjectConnectReturn(auth.account!.id, project.id)}>{connection.githubLogin ? "Reconnect GitHub" : "Connect GitHub"} ↗</a><button className="portal-plain" disabled={busy} onClick={refresh}>Refresh connection</button></div>}
-                      </div>}
+                      {!team && (
+                        <RepositoryRefresh
+                          key={`refresh:${auth.account.id}:${project.id}`}
+                          project={project}
+                          busy={busy}
+                          save={save}
+                        />
+                      )}
+                      {project.stage !== "DRAFT" &&
+                        !team &&
+                        project.repositoryUrl && (
+                          <div className="portal-connect">
+                            <h3>Repository access</h3>
+                            <p className="portal-muted">
+                              {connection?.githubLogin &&
+                              !connection.connectionError
+                                ? `Connected as @${connection.githubLogin}.`
+                                : "Reconnect GitHub so we can review your saved repository. Your project and saved commit stay the same."}
+                            </p>
+                            {connection?.connectionError && (
+                              <p className="portal-notice">
+                                {connection.connectionError}
+                              </p>
+                            )}
+                            {connection?.connectEnabled && (
+                              <div className="portal-connection-actions">
+                                <a
+                                  className="portal-link-button"
+                                  href={`${API}/v1/github/connect?flow=repositories`}
+                                  onClick={() =>
+                                    markProjectConnectReturn(
+                                      auth.account!.id,
+                                      project.id,
+                                    )
+                                  }
+                                >
+                                  {connection.githubLogin
+                                    ? "Reconnect GitHub"
+                                    : "Connect GitHub"}{" "}
+                                  ↗
+                                </a>
+                                <button
+                                  className="portal-plain"
+                                  disabled={busy}
+                                  onClick={refresh}
+                                >
+                                  Refresh connection
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       {project.stage === "DRAFT" && !team && (
                         <div className="portal-connect">
                           <h3>
@@ -813,7 +1153,12 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                                 <a
                                   className="portal-link-button"
                                   href={`${API}/v1/github/connect?flow=repositories`}
-                                  onClick={() => markProjectConnectReturn(auth.account!.id, project.id)}
+                                  onClick={() =>
+                                    markProjectConnectReturn(
+                                      auth.account!.id,
+                                      project.id,
+                                    )
+                                  }
                                 >
                                   {connection.githubLogin
                                     ? "Reconnect GitHub"
@@ -841,13 +1186,30 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                                 {connection.repositories.length > 0 && (
                                   <label>
                                     Available repositories
-                                    <SelectField aria-label="Available repositories" value={repoUrl} onValueChange={setRepoUrl} repository placeholder="Choose your app’s repository" options={connection.repositories.map(repo => ({ value: repo.url, label: repo.name, detail: repo.private ? "private" : "public" }))} />
+                                    <SelectField
+                                      aria-label="Available repositories"
+                                      value={repoUrl}
+                                      onValueChange={setRepoUrl}
+                                      repository
+                                      placeholder="Choose your app’s repository"
+                                      options={connection.repositories.map(
+                                        (repo) => ({
+                                          value: repo.url,
+                                          label: repo.name,
+                                          detail: repo.private
+                                            ? "private"
+                                            : "public",
+                                        }),
+                                      )}
+                                    />
                                   </label>
                                 )}
                                 <label>
                                   GitHub repository link
                                   <input
-                                    type="url" autoComplete="off" spellCheck={false}
+                                    type="url"
+                                    autoComplete="off"
+                                    spellCheck={false}
                                     required
                                     value={repoUrl}
                                     onChange={(event) =>
@@ -874,7 +1236,9 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                           )}
                           {!project.repositoryUrl && (
                             <details>
-                              <summary>Review without connecting GitHub</summary>
+                              <summary>
+                                Review without connecting GitHub
+                              </summary>
                               <form
                                 className="portal-form"
                                 onSubmit={async (event) => {
@@ -919,7 +1283,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                         Keep the next step in one place. Add bugs, suggestions,
                         feature requests, or PRD text.
                       </p>
-                      {!team && (
+                      {!team && !isTerminal(project.stage) && (
                         <RequestForm
                           accountId={auth.account.id}
                           key={project.id}
@@ -942,6 +1306,30 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                                 <strong>{item.title}</strong>
                               </summary>
                               <p className="portal-preserve">{item.detail}</p>
+                              <p className="portal-muted">
+                                {item.purpose === "DEFECT"
+                                  ? `Reported failure of agreed checks · ${item.aftercareEligible ? "within the aftercare reporting window" : "outside the included aftercare window"}`
+                                  : item.purpose === "CLARIFICATION"
+                                    ? "Clarification"
+                                    : "Addition or improvement"}{" "}
+                                ·{" "}
+                                {item.status
+                                  ?.replaceAll("_", " ")
+                                  .toLowerCase() ?? "pending review"}
+                              </p>
+                              {item.triageReason && (
+                                <p className="portal-notice portal-preserve">
+                                  Team assessment: {item.triageReason}
+                                </p>
+                              )}
+                              {team && !isTerminal(project.stage) && (
+                                <RequestTriage
+                                  item={item}
+                                  project={project}
+                                  busy={busy}
+                                  save={save}
+                                />
+                              )}
                               {item.referenceUrl && (
                                 <a
                                   href={item.referenceUrl}
@@ -967,9 +1355,11 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                         </p>
                       ) : (
                         <p className="portal-empty">
-                          {project.stage === "DRAFT"
-                            ? "Submit your brief when it’s ready. Our findings will appear here."
-                            : "Our findings are pending. Scope, cost, and delivery estimates follow this review."}
+                          {isTerminal(project.stage)
+                            ? "No review was recorded before this project closed."
+                            : project.stage === "DRAFT"
+                              ? "Submit your brief when it’s ready. Our findings will appear here."
+                              : "Our findings are pending. Scope, cost, and delivery estimates follow this review."}
                         </p>
                       )}
                     </section>
@@ -1026,10 +1416,16 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                 </div>
               </>
             ) : team ? (
-              <AdminOverview
-                projects={projects}
-                select={(id) => void selectProject(id, true)}
-              />
+              <>
+                <AdminOverview
+                  projects={projects}
+                  select={(id) => void selectProject(id, true)}
+                />
+                <details className="portal-card">
+                  <summary>Service health & recovery</summary>
+                  <OperationsPanel />
+                </details>
+              </>
             ) : (
               <CustomerDashboard
                 projects={projects}
@@ -1053,7 +1449,11 @@ function ProjectSteps({ stage }: { stage: string }) {
         ? 1
         : ["AWAITING_APPROVAL", "APPROVED"].includes(stage)
           ? 2
-          : 3;
+          : stage === "COMPLETE"
+            ? 4
+            : isTerminal(stage)
+              ? -1
+              : 3;
   return (
     <ol className="portal-steps" aria-label="Project journey">
       {[
@@ -1175,6 +1575,7 @@ function ProposalCard({
           )}
           <h3>Assumptions & conditions</h3>
           <p className="portal-preserve">{proposal.assumptions}</p>
+          <ProposalConditions proposal={proposal} />
           {estimateExpired && project.stage === "AWAITING_APPROVAL" && (
             <p className="portal-notice">
               This delivery estimate has passed. Add a request for an updated
@@ -1204,7 +1605,8 @@ function ProposalCard({
                   <input type="checkbox" required />
                   <span>
                     I’ve reviewed this version’s scope, cost, estimated
-                    delivery, payment schedule, and assumptions.
+                    delivery, payment schedule, responsibilities, ownership,
+                    cancellation, aftercare, and assumptions.
                   </span>
                 </label>
                 <button className="button" disabled={busy}>
@@ -1218,26 +1620,12 @@ function ProposalCard({
                 </p>
               </form>
             )}
-          {project.proposals.length > 1 && (
-            <details>
-              <summary>Previous proposal versions</summary>
-              {project.proposals
-                .filter((item) => item.id !== proposal.id)
-                .map((item) => (
-                  <div className="portal-old-proposal" key={item.id}>
-                    <strong>
-                      v{item.version} · {money(item)}
-                    </strong>
-                    <p>Estimated delivery: {displayDate(item.deliveryDate)}</p>
-                    <p className="portal-preserve">{item.scope}</p>
-                    <p className="portal-muted">
-                      Superseded — this version can’t be approved.
-                    </p>
-                  </div>
-                ))}
-            </details>
-          )}
         </>
+      ) : isTerminal(project.stage) ? (
+        <p className="portal-empty">
+          No current scope was agreed before this project closed. Any earlier
+          proposal is retained below.
+        </p>
       ) : (
         <>
           <div className="portal-estimate">
@@ -1256,6 +1644,33 @@ function ProposalCard({
             before deciding.
           </p>
         </>
+      )}
+      {project.proposals.some(
+        (item) => item.id !== project.currentProposalId,
+      ) && (
+        <details>
+          <summary>Previous proposal versions</summary>
+          {project.proposals
+            .filter((item) => item.id !== project.currentProposalId)
+            .map((item) => (
+              <div className="portal-old-proposal" key={item.id}>
+                <strong>
+                  v{item.version} · {money(item)}
+                </strong>
+                <p>Estimated delivery: {displayDate(item.deliveryDate)}</p>
+                <h3>Scope</h3>
+                <p className="portal-preserve">{item.scope}</p>
+                <h3>Agreed checks</h3>
+                <p className="portal-preserve">{item.acceptance}</p>
+                <p className="portal-preserve">{item.assumptions}</p>
+                <ProposalConditions proposal={item} />
+                <p className="portal-muted">
+                  Retained history — this version cannot be approved as the
+                  current plan.
+                </p>
+              </div>
+            ))}
+        </details>
       )}
     </section>
   );

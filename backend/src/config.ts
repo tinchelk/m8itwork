@@ -5,6 +5,7 @@ const schema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
+  RECOVERY_MODE: z.enum(["true", "false"]).default("false").transform(v => v === "true"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3121),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(1).default(0),
   CLOUDFLARE_PROXY_RANGES: z.string().max(5000).default(""),
@@ -24,6 +25,8 @@ const schema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().default(""),
   RESEND_API_KEY: z.string().default(""),
   EMAIL_FROM: z.string().default(""),
+  RESPONSE_TARGET_WORKING_DAYS: z.coerce.number().int().min(1).max(30).default(2),
+  STRIPE_ACCOUNT_ID: z.string().regex(/^acct_[A-Za-z0-9]+$/).or(z.literal("")).default(""),
   STRIPE_SECRET_KEY: z.string().default(""),
   STRIPE_WEBHOOK_SECRET: z.string().default(""),
   OPERATOR_GITHUB_IDS: z

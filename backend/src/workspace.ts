@@ -1,3 +1,4 @@
+import { assertWorkAllowed } from "./project-access.js";
 import { Prisma, type PrismaClient, type ReviewSession } from "@prisma/client";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -18,6 +19,10 @@ import { AppError } from "./shared/errors.js";
 import { accountFromRequest } from "./accounts.js";
 import { lockAccount } from "./customer-auth.js";
 import { REVIEW_POLICY } from "./reviews/types.js";
+import { conditionsSchema, defaultConditions } from "./proposal-conditions.js";
+import { registerProjectLifecycle } from "./project-lifecycle.js";
+import { financialLock } from "./financial-lock.js";
+import { enqueueUpdate } from "./notifications.js";
 
 const reference = z
   .union([
@@ -59,6 +64,8 @@ const include = {
   },
   workItems: { orderBy: { createdAt: "asc" as const }, take: 100 },
   updates: { orderBy: { createdAt: "desc" as const }, take: 100 },
+  revisions: { orderBy: { createdAt: "desc" as const }, take: 30 },
+  handover: true,
 };
 const unavailable = () =>
   new AppError(
@@ -101,12 +108,18 @@ export async function registerWorkspace(
     }
   });
   const access = createProjectAccess(prisma, env);
-  const { actor, projectFor, touch, update } = access;
+  const { actor, projectFor, update } = access;
+  const touch: typeof access.touch = (tx, project, version, data) => {
+    assertWorkAllowed(project);
+    return access.touch(tx, project, version, data);
+  };
   const id = projectId;
   const listSelect = {
     id: true,
     name: true,
     stage: true,
+    cancellationRequestedAt: true,
+    settledAt: true,
     updatedAt: true,
     repositoryUrl: true,
     reviewSummary: true,
@@ -229,6 +242,7 @@ export async function registerWorkspace(
       const current = await session(request, reply);
       const project = await prisma.$transaction(async transaction => {
         await lockAccount(transaction, account.id);
+        await financialLock(transaction);
         // One request ID creates one project, including concurrent retries.
         await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.id}, 0))::text`;
         const active = await accountFromRequest(transaction, request);
@@ -262,7 +276,7 @@ export async function registerWorkspace(
         });
         if (locked.count !== 1)
           throw new AppError(409, "CONNECTION_CHANGED", "Your GitHub connection or repository selection changed. Refresh repositories and try again.");
-        return transaction.project.create({
+        const created = await transaction.project.create({
           data: {
             id: input.id,
             accountId: account.id,
@@ -281,6 +295,9 @@ export async function registerWorkspace(
             } },
           },
         });
+        await enqueueUpdate(transaction, account.id, created.id, "REQUEST_ACKNOWLEDGMENT", `intake:${created.id}`);
+        await access.notifyOperators(transaction, "OPERATOR_INTAKE", `operator-intake:${created.id}`, created.id);
+        return created;
       });
       return reply.code(201).send({ id: project.id });
     }
@@ -374,6 +391,8 @@ export async function registerWorkspace(
         .object({
           version,
           kind: z.enum(["ISSUE", "FEATURE", "SUGGESTION", "PRD", "QUESTION"]),
+          id: z.uuid(),
+          purpose: z.enum(["ADDITION", "CLARIFICATION", "DEFECT"]).default("ADDITION"),
           title: z.string().trim().min(3).max(160),
           detail: z.string().trim().min(10).max(20_000),
           referenceUrl: reference,
@@ -387,9 +406,24 @@ export async function registerWorkspace(
           false,
           transaction,
         );
+        const existing = await transaction.projectRequest.findUnique({ where: { id: input.id } });
+        if (existing) {
+          if (existing.projectId === project.id && existing.kind === input.kind && existing.purpose === input.purpose && existing.title === input.title && existing.detail === input.detail && existing.referenceUrl === (input.referenceUrl || null)) return { id: existing.id };
+          throw new AppError(409, "REQUEST_ID_CONFLICT", "This request changed after sending. Refresh to check the saved request, then add the changes in a new request.");
+        }
+        if (["WITHDRAWN", "DECLINED", "CANCELLED", "CLOSED"].includes(project.stage)) throw new AppError(409, "PROJECT_TERMINAL", "This project is closed. Start a new request for further work.");
         await touch(transaction, project, input.version);
+        const handover = await transaction.handover.findUnique({ where: { projectId: project.id } });
+        const agreed = project.currentProposalId ? await transaction.proposal.findUnique({ where: { id: project.currentProposalId } }) : null;
+        if (input.purpose === "DEFECT" && !agreed?.approvedAt) throw new AppError(409, "AGREED_CHECKS_REQUIRED", "Agree a proposal before reporting a failure of its checks. Use an issue request for the existing app.");
+        const conditions = conditionsSchema.safeParse(agreed?.conditions);
+        const eligible = Boolean(input.purpose === "DEFECT" && agreed?.approvedAt && (!handover || Date.now() <= handover.publishedAt.getTime() + (conditions.success ? conditions.data.aftercareDays : 30) * 86400_000));
         const item = await transaction.projectRequest.create({
           data: {
+            id: input.id,
+            purpose: input.purpose,
+            reportedAgainstProposalId: input.purpose === "DEFECT" ? project.currentProposalId : null,
+            aftercareEligible: eligible,
             projectId: project.id,
             kind: input.kind,
             title: input.title,
@@ -504,6 +538,7 @@ export async function registerWorkspace(
             "Use a current or future delivery estimate.",
           ),
         assumptions: z.string().trim().min(20).max(3000),
+        conditions: conditionsSchema.default(defaultConditions),
       })
       .strict()
       .parse(request.body);
@@ -537,6 +572,7 @@ export async function registerWorkspace(
           currency: input.currency,
           deliveryDate: new Date(`${input.deliveryDate}T00:00:00Z`),
           assumptions: input.assumptions,
+          conditions: input.conditions,
           milestones: { create: installments },
         },
       });
@@ -627,6 +663,7 @@ export async function registerWorkspace(
         VERIFYING: ["BUILDING", "COMPLETE"],
         COMPLETE: [],
       };
+      if (project.cancellationRequestedAt) throw new AppError(409, "CANCELLATION_PENDING", "Resolve the requested cancellation before advancing delivery.");
       if (
         input.stage !== project.stage &&
         !next[project.stage]?.includes(input.stage)
@@ -696,11 +733,13 @@ export async function registerWorkspace(
     access,
     paymentMode: () => options.paymentProvider.mode,
   });
-  await registerPayments(app, {
+  const payments = await registerPayments(app, {
     prisma,
     env,
     access,
     provider: options.paymentProvider,
     ...(options.billing ? { billing: options.billing } : {}),
   });
+  await registerProjectLifecycle(app, { prisma, env, access, session, provider: options.paymentProvider, reconcile: payments.reconcile });
+  return payments;
 }

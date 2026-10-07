@@ -263,7 +263,7 @@ export async function registerBilling(
       prisma.$queryRaw<
         { id: string }[]
       >(Prisma.sql`SELECT m.id FROM "PaymentMilestone" m JOIN "Proposal" q ON q.id = m."proposalId" JOIN "Project" p ON p.id = q."projectId"
-        WHERE p."accountId" = ${account.id}::uuid AND p."currentProposalId" = q.id AND q."approvedAt" IS NOT NULL AND p.stage IN ('APPROVED','BUILDING','VERIFYING')
+        WHERE p."accountId" = ${account.id}::uuid AND p."currentProposalId" = q.id AND q."approvedAt" IS NOT NULL AND p."cancellationRequestedAt" IS NULL AND p.stage IN ('APPROVED','BUILDING','VERIFYING')
         AND m."releasedAt" IS NOT NULL AND (m."paidCents" - m."refundedCents" <> m."amountCents" OR m.disputed
           OR EXISTS (SELECT 1 FROM "PaymentAttempt" a WHERE a."milestoneId" = m.id AND a.status = 'PAID' AND a.mode <> ${provider.mode}))
         ${dueAfter ? Prisma.sql`AND m.id > ${dueAfter}::uuid` : Prisma.empty} ORDER BY m.id ASC LIMIT 26`),

@@ -46,7 +46,7 @@ npm --prefix backend run cleanup
 
 `leads` lists the latest 100 submissions through the operator's database connection. Check it daily during the pilot. Review those submissions and contact the builder about a paid assessment. Record progress with `lead:status`: `CONTACTED`, `ASSESSMENT_PROPOSED`, `ASSESSMENT_PAID`, `PROJECT_PROPOSED`, `PROJECT_PAID`, `COMPLETED`, or `DECLINED`. Mark a paid stage only after confirming the actual payment. Keep proposal details and invoices in your private business records; use the submission UUID to connect them. Track proposals and paid projects as the pilot's conversion outcomes, aiming for one paying client.
 
-Resend delivers account verification and password-recovery emails when configured. Project acknowledgment emails and notifications are not automated. Run cleanup daily to remove expired sessions, encrypted credentials, and unsubmitted inspections. Submitted briefs and summaries are retained separately; process deletion requests through the database. Keep database access restricted and back up submitted briefs.
+Resend delivers account verification and password-recovery emails when configured. This milestone implements durable project notifications and minute-by-minute retries, plus hourly credential cleanup within the backend. These changes are locally verified; the deployment record states which revision is running. Submitted briefs and summaries are retained separately; process deletion requests through the database. Keep database access restricted and back up submitted briefs.
 
 ## Verification
 
@@ -62,7 +62,7 @@ Integration tests require a dedicated `m8itwork_test` database and clean up only
 
 ## Deployment notes
 
-The frontend contains independently built `apps/customer` and `apps/admin` Next.js workspaces, with shared source in `packages/ui`. Docker selects `APP=customer` or `APP=admin` on Node22. The API is a separate service. Deployments use the committed implementation checkpoint in this repository; the exact revision and Railway deployment IDs are recorded in the release handoff. The separate m8itwork Railway project has dedicated PostgreSQL at [m8itwork.com](https://m8itwork.com) and [api.m8itwork.com](https://api.m8itwork.com/health). Cloudflare preserves HTTPS and redirects www to the apex. Daily volume backups are enabled; leads review and expired-session cleanup currently use the authenticated CLI manually. Railway-specific IP handling was verified against forged headers; general API limits are per process and account endpoints also use durable PostgreSQL identity/network throttles. See [deployment evidence and operations](docs/DEPLOYMENT.md), including the passed real GitHub login/private scan and remaining customer-project/Stripe checks.
+The frontend contains independently built `apps/customer` and `apps/admin` Next.js workspaces, with shared source in `packages/ui`. Docker selects `APP=customer` or `APP=admin` on Node22. The API is a separate service. Deployments use the committed implementation checkpoint in this repository; the exact revision and Railway deployment IDs are recorded in the release handoff. The separate m8itwork Railway project has dedicated PostgreSQL at [m8itwork.com](https://m8itwork.com) and [api.m8itwork.com](https://api.m8itwork.com/health). Cloudflare preserves HTTPS and redirects www to the apex. Daily Railway volume backups are enabled. The launch-completion backend schedules event processing and credential cleanup; independent encrypted logical backup scheduling and external outage monitoring still need an operating host/destination. Railway-specific IP handling was verified against forged headers; general API limits are per process and account endpoints also use durable PostgreSQL identity/network throttles. See [deployment evidence and operations](docs/DEPLOYMENT.md), including the passed real GitHub login/private scan and remaining customer-project/Stripe checks.
 
 See [docs/PRODUCT_DIRECTION.md](docs/PRODUCT_DIRECTION.md) and [docs/HANDOFF.md](docs/HANDOFF.md) for scope and acceptance criteria.
 
@@ -74,7 +74,7 @@ Set `OPERATOR_GITHUB_IDS` in the server environment to the comma-separated numer
 
 Account sessions last up to 30 days and are independent of the 24-hour inspection session/eight-hour repository token. Logout revokes the browser-bound account session and cancels pending OAuth. Saved project summaries persist after inspection-session cleanup. No anonymous submission is claimed merely because its contact email matches an account; the existing quick brief continues to use email follow-up.
 
-Customer project/request/conversation and operator form drafts use per-tab storage for one hour, bound to the signed-in account and project, to survive reauthentication. Successful saves and explicit sign-out clear drafts; approval acknowledgments are never restored. Requests added once building starts are separately scoped follow-on work; see the pilot procedure in the milestone brief.
+Customer project/request/conversation and operator form drafts use per-tab storage for one hour, bound to the signed-in account and project, to survive reauthentication. Successful saves and explicit sign-out clear drafts; approval acknowledgments are never restored. Requests distinguish additions, clarifications and reported failures of agreed checks. The team assesses included corrections against the proposal’s aftercare terms; additions need separately agreed scope.
 
 See [docs/MILESTONE_2.md](docs/MILESTONE_2.md) for acceptance and exclusions. Live GitHub sign-in/private scanning now pass; project/PRD/proposal and second-account verification remain open. Mocked provider tests do not close those remaining gates.
 
@@ -85,7 +85,7 @@ Open the separate admin app at <http://localhost:3123> (production <https://admi
 
 Publishing a proposal records the team’s agreement; customer approval records theirs. Approval requests the first installment. Stripe confirmation unlocks building; the team requests later installments at their agreed stages. Delivery items need recorded checks before Done, and completion requires all items done, all due payments confirmed, and verification/handover evidence. Refunds, disputes, overpayments, and differing payment modes block advancement and need team review. A paid scope is revised through a separately agreed follow-on project.
 
-Messages poll while the workspace is visible; incoming messages are marked read when their headings are visible. The team read marker is shared by operators. There are no email notifications. Unsaved drafts last one hour in the current tab; explicit sign-out clears them.
+Messages poll while the workspace is visible; incoming messages are marked read when their headings are visible. The team read marker is shared by operators. Durable project emails deliver acknowledgments, replies, proposals, payment updates and handovers to a verified destination. Customers manage preferences or a separate notification email in Account; private details remain behind sign-in. Operators receive customer-request and service alerts, controlled separately. Unsaved drafts last one hour in the current tab; explicit sign-out clears them.
 
 See [docs/STRIPE_SETUP.md](docs/STRIPE_SETUP.md) for server-only configuration and sandbox verification, and [docs/MILESTONE_3.md](docs/MILESTONE_3.md) for the implementation scope. Expire pending Checkout before revising an unpaid proposal. An uncertain session is recovered by its existing Stripe session ID, rather than by creating another charge. Never treat the Checkout return URL, a fixture, or test-mode balance as real payment.
 
@@ -96,3 +96,13 @@ The backoffice can queue a private AI-assisted repository review for a local sub
 ## Docker review worker
 
 Run the worker on a dedicated Docker host using `compose.worker.yml`. It builds the Node worker and pinned Codex/Claude CLIs from this repo, keeps pairing/login state in a private persistent volume, and connects outbound to the existing Railway queue. Follow [Docker worker setup](docs/DOCKER_WORKER.md) to pair, sign in and verify the subscription, then run `docker compose -f compose.worker.yml up -d`. The Docker host requires neither the API/database nor the Mac checkout. Stop the worker before setup commands or moving to another host.
+
+## Launch completion and operating procedures
+
+Unagreed requests can be withdrawn or declined with a retained reason. Either party can request cancellation of agreed work; new collection and delivery pause until an exact written settlement is accepted and Stripe finances are conclusively verified. Refunds remain explicit Stripe actions. The team can offer to resume the original agreement, requiring customer confirmation. Saved scope, price and financial holds remain authoritative.
+
+Before scope approval, the customer can explicitly refresh the same repository to a new inspected commit. Earlier evidence and proposals stay in history; active old reviews are cancelled and cannot become current. Proposals record responsibilities, external costs, ownership, cancellation and an editable aftercare window. Completed work receives actual artifact links, checks, operating instructions, limitations and deployment notes; customer acceptance is recorded separately.
+
+Backend maintenance retries durable financial/email events every minute and clears expired credentials hourly. The backoffice Operations panel exposes unresolved events, safe retry actions and worker/provider attention. Review the customer queue and Operations each working day; the configurable response aim defaults to two working days for the initial fit review, distinct from a quoted delivery date.
+
+See [launch completion evidence](docs/LAUNCH_COMPLETION.md) and [recovery and acceptance runbook](docs/OPERATIONS_RECOVERY.md). Fixture success does not establish provider publication, merchant activation or a paid-pilot launch.

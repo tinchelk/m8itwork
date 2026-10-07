@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { AppError } from "./shared/errors.js";
+import { financialLock, unresolvedPayments } from "./financial-lock.js";
 
 export const paymentGates = [
   "BEFORE_BUILD",
@@ -89,6 +90,9 @@ export async function requirePaymentGate(
   gate: (typeof paymentGates)[number],
   mode: string,
 ) {
+  await financialLock(tx);
+  if (await unresolvedPayments(tx, proposalId))
+    throw new AppError(409, "PAYMENT_RECONCILIATION_PENDING", "A payment notification still needs reconciliation. Delivery cannot advance until its financial state is confirmed.");
   const rows = await tx.paymentMilestone.findMany({
     where: { proposalId },
     include: { attempts: true },
@@ -112,6 +116,7 @@ export async function guardProposalRevision(
   tx: Prisma.TransactionClient,
   proposalId: string | null,
 ) {
+  if (proposalId && await unresolvedPayments(tx, proposalId)) throw new AppError(409, "PAYMENT_RECONCILIATION_PENDING", "Reconcile pending payment notifications before revising this proposal.");
   if (
     proposalId &&
     (await tx.paymentAttempt.count({

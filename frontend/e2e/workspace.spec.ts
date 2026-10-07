@@ -13,7 +13,7 @@ test("lands a new customer on the dashboard before explicitly starting a project
   await page.screenshot({ path: testInfo.outputPath(`dashboard-empty-${testInfo.project.name}.png`) });
   await page.getByRole("button", { name: "Start a project", exact: true }).click();
   await expect(page.getByLabel("GitHub repository", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "← Dashboard", exact: true }).click();
+  await page.getByRole("link", { name: "← Dashboard", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your apps. Their next chapter." })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
@@ -29,7 +29,7 @@ test("shows load failures honestly and recovers customer and backoffice project 
     state.failList = false;
     await page.getByRole("button", { name: "Try again", exact: true }).click();
     await expect(page.getByRole("heading", { name: url === "/dashboard" ? "Your apps. Their next chapter." : "Help the next app move forward." })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Bloom bookings.*Getting started|Getting started.*Bloom bookings/ }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /Bloom bookings.*Getting started|Getting started.*Bloom bookings/ }).first()).toBeVisible();
   }
 });
 
@@ -49,10 +49,10 @@ test("shows a requested final payment and clears read messages on return to the 
     await page.locator(".dashboard-project").scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath("dashboard-project-card-mobile.png") });
   }
-  await page.getByRole("button", { name: /Verifying.*Bloom bookings.*Open project/ }).click();
+  await page.getByRole("link", { name: /Verifying.*Bloom bookings.*Open project/ }).click();
   await page.getByRole("link", { name: "Conversation", exact: true }).click();
   await expect.poll(() => state.readMessageIds.length).toBe(1);
-  await page.getByRole("button", { name: "← Dashboard", exact: true }).click();
+  await page.getByRole("link", { name: "← Dashboard", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your apps. Their next chapter." })).toBeVisible();
   await expect(page.getByText("New team message", { exact: true })).toHaveCount(0);
   state.project.proposals[0]!.milestones[0]!.attempts = [{ status: "PROCESSING", mode: "test" }];
@@ -81,7 +81,7 @@ test("keeps the operator's customer dashboard separate from the backoffice", asy
   await expect(page.getByText("New team message", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Backoffice", exact: true })).toHaveAttribute("href", "http://127.0.0.1:3131/");
   expect(state.operatorRequests).toBe(0);
-  await page.getByRole("button", { name: /Proposal ready.*Bloom bookings.*Open project/ }).click();
+  await page.getByRole("link", { name: /Proposal ready.*Bloom bookings.*Open project/ }).click();
   await expect(page.getByRole("link", { name: "Review proposal" })).toBeVisible();
   await expect(page.getByLabel("Review summary")).toHaveCount(0);
   await page.getByRole("link", { name: "Backoffice", exact: true }).click();
@@ -144,7 +144,7 @@ test("sends only a repository and request straight to review", async ({ page }, 
   expect(state.inspectionCalls).toBe(1);
   state.operator = true;
   await page.goto("http://127.0.0.1:3131/");
-  await page.getByRole("button", { name: /private-app/ }).first().click();
+  await page.getByRole("link", { name: /private-app/ }).first().click();
   await expect(page.getByText("Add recurring bookings and improve the checkout journey.", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Review summary")).toBeVisible();
 });
@@ -314,7 +314,7 @@ test("links a private repository, preserves a failed PRD save, then shows the re
   if (testInfo.project.name === "desktop")
     await page.setViewportSize({ width: 1440, height: 1050 });
   await page
-    .getByRole("link", { name: "m8itwork home" })
+    .getByRole("link", { name: "m8itwork dashboard" })
     .scrollIntoViewIfNeeded();
   await page.screenshot({
     path: testInfo.outputPath(`workspace-${testInfo.project.name}.png`),
@@ -361,7 +361,7 @@ test("recovers a PRD after reauthentication only for its original account", asyn
   await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible();
   state.signedOut = false;
   await page.reload();
-  await page.getByRole("button", { name: /Getting started.*Bloom bookings.*Open project/ }).click();
+  await page.getByRole("link", { name: /Getting started.*Bloom bookings.*Open project/ }).click();
   await expect(page.getByLabel("Details", { exact: true })).toHaveValue("");
 });
 test("jumps directly to a proposal and requires fresh acknowledgment after revision", async ({

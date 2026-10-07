@@ -341,6 +341,7 @@ describe.skipIf(!dbUrl)("owned customer workspace", () => {
     expect(
       (
         await post(`/v1/projects/${project.id}/requests`, b.cookie, {
+          id: randomUUID(),
           version: 1,
           kind: "PRD",
           title: "Another owner",
@@ -438,6 +439,7 @@ describe.skipIf(!dbUrl)("owned customer workspace", () => {
     expect(
       (
         await post(`/v1/projects/${id}/requests`, customer.cookie, {
+          id: randomUUID(),
           version: 1,
           kind: "PRD",
           title: "Recurring booking requirements",

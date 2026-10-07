@@ -38,6 +38,13 @@ model Account {
   googleId    String?          @unique
   displayName String?
   closedAt DateTime?
+  notificationEmail String?
+  notificationVerifiedAt DateTime?
+  projectNotifications Boolean @default(true)
+  operatorNotifications Boolean @default(true)
+  retiredIdentities ClosedIdentity[]
+  notificationTokens NotificationToken[]
+  notificationOutbox NotificationOutbox[]
   sessions    AccountSession[]
   projects    Project[]
   inspections Inspection[]
@@ -135,6 +142,18 @@ model Project {
   customerLastMessageAt DateTime?
   teamLastMessageAt     DateTime?
   currentProposalId     String?          @db.Uuid
+  resumeProposedAt DateTime?
+  cancellationRequestedAt DateTime?
+  cancellationReason String?
+  settlementSummary String?
+  settlementRetainedCents Int?
+  settlementProposedAt DateTime?
+  settlementAcceptedAt DateTime?
+  settledAt DateTime?
+  closedReason String?
+  acceptedAt DateTime?
+  revisions RepositoryRevision[]
+  handover Handover?
   requests              ProjectRequest[]
   proposals             Proposal[]
   updates               ProjectUpdate[]
@@ -209,6 +228,12 @@ model ProjectRequest {
   title        String
   detail       String
   referenceUrl String?
+  purpose String @default("ADDITION")
+  status String @default("PENDING")
+  triageReason String?
+  triagedAt DateTime?
+  reportedAgainstProposalId String? @db.Uuid
+  aftercareEligible Boolean @default(false)
   createdAt    DateTime @default(now())
 
   @@index([projectId, createdAt])
@@ -225,11 +250,73 @@ model Proposal {
   currency     String
   deliveryDate DateTime           @db.Date
   assumptions  String
+  conditions Json @default("{}")
   approvedAt   DateTime?
   milestones   PaymentMilestone[]
   createdAt    DateTime           @default(now())
 
   @@unique([projectId, version])
+}
+
+model HealthAlert {
+  id String @id
+  code String
+  openedAt DateTime @default(now())
+  resolvedAt DateTime?
+}
+
+model RepositoryRevision {
+  id String @id @default(uuid()) @db.Uuid
+  projectId String @db.Uuid
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  commit String
+  report Json
+  reviewSummary String?
+  createdAt DateTime @default(now())
+  @@unique([projectId, commit])
+}
+
+model Handover {
+  id String @id @default(uuid()) @db.Uuid
+  projectId String @unique @db.Uuid
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  proposalId String @db.Uuid
+  summary String
+  artifacts Json
+  checks String
+  instructions String
+  limitations String
+  deployment String
+  publishedAt DateTime @default(now())
+}
+
+model NotificationToken {
+  id String @id
+  accountId String @db.Uuid
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  email String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@index([expiresAt])
+}
+
+model NotificationOutbox {
+  id String @id
+  accountId String @db.Uuid
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  projectId String? @db.Uuid
+  kind String
+  destination String?
+  verificationUrlEncrypted String?
+  sentAt DateTime?
+  skippedAt DateTime?
+  attempts Int @default(0)
+  firstAttemptAt DateTime?
+  leaseUntil DateTime?
+  nextAttemptAt DateTime @default(now())
+  lastError String?
+  createdAt DateTime @default(now())
+  @@index([sentAt, skippedAt, nextAttemptAt])
 }
 
 model ProjectMessage {
@@ -309,8 +396,32 @@ model PaymentAttempt {
   disputeEventCreated   Int              @default(0)
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
+  inbox PaymentInbox[]
 
   @@index([milestoneId, createdAt])
+}
+
+model PaymentInbox {
+  id String @id
+  type String
+  mode String
+  objectId String
+  paymentIntentId String?
+  sessionId String?
+  attemptId String? @db.Uuid
+  attempt PaymentAttempt? @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  refundedCents Int?
+  eventCreated Int
+  processedAt DateTime?
+  ignoredAt DateTime?
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now())
+  leaseUntil DateTime?
+  lastError String?
+  createdAt DateTime @default(now())
+  @@index([processedAt, ignoredAt, nextAttemptAt])
+  @@index([paymentIntentId, mode])
+  @@index([attemptId])
 }
 
 model PaymentEvent {
@@ -358,4 +469,10 @@ model Submission {
   createdAt        DateTime @default(now())
 
   @@index([createdAt])
+}
+
+model ClosedIdentity {
+  id String @id
+  accountId String @db.Uuid
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 }

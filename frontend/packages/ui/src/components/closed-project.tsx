@@ -2,6 +2,8 @@
 import { displayDate, money, type Project } from "./workspace-types";
 import { ProjectConversation } from "./project-conversation";
 import { ProjectDelivery } from "./project-delivery";
+import { ProjectHandover, SettlementRecord } from "./project-completion";
+import { ProposalConditions } from "./proposal-conditions";
 import { ProjectPayments } from "./project-payments";
 import type { Save } from "./workspace-forms";
 export function ClosedProject({
@@ -79,12 +81,26 @@ export function ClosedProject({
               <p className="portal-preserve">{proposal.acceptance}</p>
               <h4>Assumptions</h4>
               <p className="portal-preserve">{proposal.assumptions}</p>
+              <ProposalConditions proposal={proposal} />
             </div>
           ))
         ) : (
           <p>No proposal was agreed.</p>
         )}
       </section>
+      {project.settledAt && (
+        <section className="portal-card">
+          <SettlementRecord project={project} />
+        </section>
+      )}
+      <ProjectHandover
+        project={project}
+        accountId={accountId}
+        team
+        busy={false}
+        save={save}
+        readOnly
+      />
       <ProjectPayments
         project={project}
         team

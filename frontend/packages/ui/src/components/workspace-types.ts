@@ -3,11 +3,13 @@ export interface Account {
   githubLogin: string | null;
   email?: string | null;
   emailVerified?: boolean;
+  notificationVerified?: boolean;
   googleConnected?: boolean;
   displayName: string | null;
   isOperator: boolean;
 }
 export interface Auth {
+  responseTargetWorkingDays?: number;
   account: Account | null;
   connectEnabled: boolean;
   emailEnabled?: boolean;
@@ -17,6 +19,9 @@ export interface ProjectListItem {
   id: string;
   name: string;
   stage: string;
+  resumeProposedAt?: string | null;
+  cancellationRequestedAt?: string | null;
+  settledAt?: string | null;
   updatedAt: string;
   repositoryUrl: string | null;
   account?: { githubLogin: string | null; displayName?: string | null };
@@ -57,6 +62,7 @@ export interface WorkItem {
   evidenceUrl: string | null;
 }
 export interface Proposal {
+  conditions?: { responsibilities: string; externalCosts: string; ownership: string; cancellation: string; aftercareDays: number; aftercare: string };
   id: string;
   version: number;
   scope: string;
@@ -80,6 +86,18 @@ export interface Inventory {
   limitations: string[];
 }
 export interface Project extends ProjectListItem {
+  resumeProposedAt?: string | null;
+  cancellationRequestedAt?: string | null;
+  cancellationReason?: string | null;
+  settlementSummary?: string | null;
+  settlementRetainedCents?: number | null;
+  settlementProposedAt?: string | null;
+  settlementAcceptedAt?: string | null;
+  settledAt?: string | null;
+  closedReason?: string | null;
+  acceptedAt?: string | null;
+  revisions?: { id: string; commit: string; report: Inventory; reviewSummary: string | null; createdAt: string }[];
+  handover?: { summary: string; artifacts: { label: string; url: string }[]; checks: string; instructions: string; limitations: string; deployment: string; publishedAt: string } | null;
   accountClosedAt?: string | null;
   aiReviewConsentAt?: string | null;
   aiReviewConsentVersion?: string | null;
@@ -102,6 +120,10 @@ export interface Project extends ProjectListItem {
     title: string;
     detail: string;
     referenceUrl: string | null;
+    purpose?: string;
+    status?: string;
+    triageReason?: string | null;
+    aftercareEligible?: boolean;
     createdAt: string;
   }[];
   proposals: Proposal[];
@@ -173,6 +195,9 @@ export const stageLabels: Record<string, string> = {
   VERIFYING: "Verifying",
   COMPLETE: "Complete",
   CLOSED: "Closed",
+  WITHDRAWN: "Withdrawn",
+  DECLINED: "Declined",
+  CANCELLED: "Cancelled",
 };
 export function displayDate(value: string) {
   return new Intl.DateTimeFormat("en", {

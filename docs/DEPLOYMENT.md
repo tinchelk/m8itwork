@@ -66,7 +66,7 @@ All three independent deployment gates passed: Staff Engineer, Product Owner, an
 
 ## Pilot operations and recovery
 
-Use the new project IDs explicitly. Operator GitHub login is configured for the customer-project desk. Anonymous quick briefs still use the separate authenticated Railway leads CLI; review these daily. Lead output contains customer briefs; keep it in the operator terminal and private records, never paste production output into chat. Manual cleanup is available and was successfully exercised. Automated notifications and scheduled cleanup are not enabled yet.
+Use the new project IDs explicitly. Operator GitHub login is configured for the customer-project desk. Anonymous quick briefs still use the separate authenticated Railway leads CLI; review these daily. Lead output contains customer briefs; keep it in the operator terminal and private records, never paste production output into chat. Manual cleanup remains available. The launch-completion backend schedules cleanup hourly and durable financial/email retries every minute. These new behaviors are local implementation evidence until this milestone is deployed; see OPERATIONS_RECOVERY.md for the current procedures.
 
 ```sh
 railway ssh --project 1e29ee87-902c-4320-9089-863284aaf971 --environment production --service api npm run leads

@@ -8,6 +8,10 @@ const nextSteps: Record<string, string> = {
   APPROVED: "Check your agreed payment plan and next step.",
   BUILDING: "Follow the work and talk with the team.",
   VERIFYING: "Follow the checks before your handover.",
+  WITHDRAWN: "Request withdrawn. Your history is retained.",
+  DECLINED: "The team declined this request. See the reason and conversation.",
+  CANCELLED: "Cancellation settled. See the retained payment history.",
+  CLOSED: "This project is closed. See its history.",
   COMPLETE: "See your verification summary and handover.",
 };
 
@@ -39,19 +43,20 @@ export function CustomerDashboard({
       {projects.length ? (
         <>
           <div className="dashboard-summary" aria-label="Project summary">
-            <div><strong>{projects.filter((p) => p.stage !== "COMPLETE").length}</strong><span>Active projects</span></div>
+            <div><strong>{projects.filter((p) => !["COMPLETE", "WITHDRAWN", "DECLINED", "CANCELLED", "CLOSED"].includes(p.stage)).length}</strong><span>Active projects</span></div>
             <div><strong>{projects.filter((p) => p.stage === "AWAITING_APPROVAL").length}</strong><span>Proposals to review</span></div>
             <div><strong>{projects.filter((p) => p.stage === "COMPLETE").length}</strong><span>Completed</span></div>
           </div>
           <div className="dashboard-projects">
             {projects.map((project) => {
               const proposal = project.proposals?.find((p) => p.id === project.currentProposalId);
-              const payment = proposal?.approvedAt
+              const paused = Boolean(project.cancellationRequestedAt || ["WITHDRAWN", "DECLINED", "CANCELLED", "CLOSED"].includes(project.stage));
+              const payment = !paused && proposal?.approvedAt
                 ? proposal.milestones?.find((m) => m.releasedAt && (!isPaid(m, project.billingMode) || paymentNeedsReview(m, project.billingMode)))
                 : undefined;
               const paymentHold = payment && paymentNeedsReview(payment, project.billingMode);
               const checkingPayment = payment?.attempts?.[0]?.status === "PROCESSING";
-              const nextStep = paymentHold
+              const nextStep = project.cancellationRequestedAt && project.stage !== "CANCELLED" ? "Cancellation requested. Review the settlement with the team." : paymentHold
                 ? "Payment needs team review. Open your payment plan."
                 : payment && project.billingMode === "unconfigured"
                   ? "Payment collection is being set up. Talk with the team."
@@ -65,11 +70,11 @@ export function CustomerDashboard({
                 (!project.customerReadAt || project.teamLastMessageAt > project.customerReadAt),
               );
               return (
-                <button
+                <a
                   key={project.id}
                   className="dashboard-project"
-                  disabled={busy}
-                  onClick={() => select(project.id)}
+                  href={`/dashboard?project=${encodeURIComponent(project.id)}`}
+                  onClick={event => { if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); if (!busy) select(project.id); } }}
                 >
                   <div className="dashboard-project-top">
                     <span className="portal-stage">{stageLabels[project.stage] ?? project.stage}</span>
@@ -81,7 +86,7 @@ export function CustomerDashboard({
                     <span>Updated {displayDate(project.updatedAt)}</span>
                     <strong>Open project <span aria-hidden="true">↗</span></strong>
                   </div>
-                </button>
+                </a>
               );
             })}
           </div>

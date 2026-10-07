@@ -15,6 +15,13 @@ async function fixture(page: Page) {
     const path = new URL(route.request().url()).pathname;
     const send = (json: unknown, status = 200) =>
       route.fulfill({ status, json });
+    if (path === "/v1/auth/notifications")
+      return send({
+        enabled: true,
+        email: "builder@example.invalid",
+        verified: true,
+        projectUpdates: true,
+      });
     if (path === "/v1/auth/session")
       return send({
         account: state.signedIn
@@ -354,6 +361,31 @@ test("shows retained closed-customer records read-only in backoffice", async ({
       attempts: [{ status: "PAID", mode: "test" }],
     },
   ];
+  proposal.conditions = {
+    responsibilities:
+      "Customer supplies access; team verifies agreed outcomes.",
+    externalCosts: "Hosting and additional work require separate agreement.",
+    ownership: "Customer owns delivered code after agreed payments.",
+    cancellation:
+      "Written settlement requires both parties and financial verification.",
+    aftercare: "Included corrections apply to failures of agreed checks.",
+    aftercareDays: 30,
+  };
+  state.project.handover = {
+    summary: "Completed booking delivery handed over to customer.",
+    artifacts: [
+      {
+        label: "Retained delivery artifact",
+        url: "https://github.com/fixture/app/pull/1",
+      },
+    ],
+    checks: "Recorded booking acceptance checks passed.",
+    instructions: "Use the approved branch and configured services.",
+    limitations: "No known limitations in the agreed checks.",
+    deployment: "Deployment was excluded; operating instructions retained.",
+    publishedAt: new Date().toISOString(),
+  };
+  state.project.acceptedAt = new Date().toISOString();
   state.project.accountClosedAt = new Date().toISOString();
   await page.goto(`http://127.0.0.1:3131/?project=${state.project.id}`);
   await expect(
@@ -361,6 +393,22 @@ test("shows retained closed-customer records read-only in backoffice", async ({
   ).toBeVisible();
   await expect(page.getByText("Paid", { exact: true })).toBeVisible();
   await expect(page.getByText("Current scope", { exact: false })).toBeVisible();
+  await page
+    .getByText("Responsibilities, ownership & aftercare", { exact: true })
+    .click();
+  await expect(
+    page.getByText("Customer owns delivered code after agreed payments."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Retained delivery artifact" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Deployment was excluded; operating instructions retained."),
+  ).toBeVisible();
+  await expect(page.getByText(/Customer accepted delivery/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Accept delivery" }),
+  ).toHaveCount(0);
   for (const action of [
     "Check payment status",
     "Expire pending Checkout",
@@ -380,4 +428,28 @@ test("shows retained closed-customer records read-only in backoffice", async ({
       exact: false,
     }),
   ).toBeVisible();
+});
+
+test("closed customer history retains exact settled amount without collection controls", async ({
+  page,
+}) => {
+  const state = await mockWorkspace(page, { operator: true });
+  publishProposal(state);
+  state.project.stage = "CANCELLED";
+  state.project.accountClosedAt = new Date().toISOString();
+  state.project.proposals[0]!.approvedAt = new Date().toISOString();
+  state.project.settledAt = new Date().toISOString();
+  state.project.settlementRetainedCents = 15000;
+  state.project.settlementSummary =
+    "Completed assessment retained; remaining installments cancelled.";
+  await page.goto(`http://127.0.0.1:3131/?project=${state.project.id}`);
+  await expect(
+    page.getByRole("heading", { name: "Settlement confirmed" }),
+  ).toBeVisible();
+  await expect(page.locator(".settlement-record")).toContainText("$150.00");
+  await expect(
+    page.getByRole("button", {
+      name: /Verify finances|Pay |Request this payment|Confirm request/,
+    }),
+  ).toHaveCount(0);
 });

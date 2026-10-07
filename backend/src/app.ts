@@ -1,3 +1,4 @@
+import { assertIdentityOpen } from "./identity-fences.js";
 import { createHash } from "node:crypto";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
@@ -25,6 +26,9 @@ import { ResendAccountEmail, type AccountEmailProvider } from "./account-email.j
 import { GoogleOidcProvider, type GoogleProvider } from "./google-provider.js";
 import { registerReviews } from "./reviews/routes.js";
 import { registerWorkspace } from "./workspace.js";
+import { registerNotifications, ResendProjectEmail, type ProjectEmailProvider } from "./notifications.js";
+import { registerOperations } from "./operations.js";
+import { cleanup } from "./maintenance.js";
 import { StripeProvider, type PaymentProvider } from "./stripe-provider.js";
 import { StripeBillingProvider, type BillingProvider } from "./billing-provider.js";
 import { registerBilling } from "./billing.js";
@@ -34,6 +38,7 @@ import { clientRateLimitKey } from "./proxy-trust.js";
 declare module "fastify" {
   interface FastifyInstance {
     config: Env;
+    maintenance: () => Promise<void>;
   }
 }
 const COOKIE = "m8_review_session";
@@ -92,6 +97,7 @@ export async function buildApp(
     paymentProvider?: PaymentProvider;
     billingProvider?: BillingProvider;
     accountEmailProvider?: AccountEmailProvider;
+    projectEmailProvider?: ProjectEmailProvider;
     googleProvider?: GoogleProvider;
   } = {},
 ) {
@@ -120,6 +126,7 @@ export async function buildApp(
     keyGenerator: clientRateLimitKey(env),
   });
   app.addHook("onRequest", async (request, reply) => {
+    if (env.RECOVERY_MODE && request.url.startsWith("/v1/") && request.url.split("?")[0] !== "/v1/stripe/webhook") throw new AppError(503, "RECOVERY_MODE", "The service is recovering. Your project history is being reconciled before access resumes.");
     reply.header("Cache-Control", "no-store");
     reply.header("x-request-id", request.id);
     if (
@@ -239,7 +246,7 @@ export async function buildApp(
     : null;
   app.get("/health", async () => {
     await prisma.$queryRaw`SELECT 1`;
-    return { status: "ok" };
+    return { status: "ok", recovery: env.RECOVERY_MODE };
   });
   app.get("/v1/session", async (request, reply) => {
     const current = await session(request, reply);
@@ -284,6 +291,7 @@ export async function buildApp(
     return {
       connectEnabled,
       emailEnabled: accountEmail.enabled,
+      responseTargetWorkingDays: env.RESPONSE_TARGET_WORKING_DAYS,
       googleEnabled: Boolean(env.GOOGLE_CLIENT_ID),
       account: account
         ? {
@@ -292,6 +300,7 @@ export async function buildApp(
             displayName: account.displayName,
             email: account.email,
             emailVerified: Boolean(account.emailVerifiedAt),
+            notificationVerified: Boolean(account.notificationEmail ? account.notificationVerifiedAt : account.emailVerifiedAt),
             googleConnected: Boolean(account.googleId),
             isOperator: isOperator(account, env),
           }
@@ -583,6 +592,7 @@ export async function buildApp(
             "OAUTH_CANCELLED",
             "This connection attempt was cancelled. Please connect again.",
           );
+        await assertIdentityOpen(transaction, "githubId", String(user.id));
         if (accountToken) {
           const account = await transaction.account.upsert({
             where: { githubId: String(user.id) },
@@ -781,12 +791,22 @@ export async function buildApp(
     },
   );
   const billing = await registerBilling(app, { prisma, env, provider: options.billingProvider ?? new StripeBillingProvider(options.paymentProvider ? { ...env, STRIPE_SECRET_KEY: "", STRIPE_WEBHOOK_SECRET: "" } : env) });
-  await registerWorkspace(app, {
+  const payments = await registerWorkspace(app, {
     prisma,
     env,
     session,
     paymentProvider: options.paymentProvider ?? new StripeProvider(env),
     billing,
+  });
+  const notifications = await registerNotifications(app, prisma, env, options.projectEmailProvider ?? new ResendProjectEmail(env));
+  const operations = await registerOperations(app, prisma, env, payments, notifications);
+  let lastCleanup = 0;
+  app.decorate("maintenance", async () => {
+    if (env.RECOVERY_MODE) return;
+    await payments.processPending();
+    await operations.alerts();
+    await notifications.process();
+    if (Date.now() - lastCleanup >= 3600_000) { await cleanup(prisma); lastCleanup = Date.now(); }
   });
   await registerReviews(app, { prisma, env, github });
   app.addHook("onClose", () => prisma.$disconnect());

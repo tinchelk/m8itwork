@@ -27,6 +27,7 @@ export function ProjectDelivery({
   const formRef = useRef<HTMLFormElement>(null);
   const draft = useFormDraft(formRef, accountId, `delivery:${project.id}`);
   const items = project.workItems ?? [];
+  if (["WITHDRAWN", "DECLINED", "CANCELLED", "CLOSED"].includes(project.stage) && !items.length) return null;
   return (
     <section id="delivery" className="portal-card">
       <p className="portal-kicker">FROM AGREEMENT TO HANDOVER</p>
@@ -62,7 +63,7 @@ export function ProjectDelivery({
                 Open delivery evidence ↗
               </a>
             )}
-            {team &&
+            {team && !project.cancellationRequestedAt &&
               ["APPROVED", "BUILDING", "VERIFYING"].includes(project.stage) && (
                 <details>
                   <summary>Update this item</summary>
@@ -112,7 +113,7 @@ export function ProjectDelivery({
           </article>
         ))}
       </div>
-      {team &&
+      {team && !project.cancellationRequestedAt &&
         ["APPROVED", "BUILDING", "VERIFYING"].includes(project.stage) && (
           <details>
             <summary>Add a delivery item</summary>

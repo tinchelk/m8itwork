@@ -26,7 +26,7 @@ export async function accountFromRequest(
     : null;
 }
 export async function requireAccount(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   request: FastifyRequest,
 ): Promise<Account> {
   const account = await accountFromRequest(prisma, request);

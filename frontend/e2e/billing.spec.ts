@@ -60,6 +60,7 @@ async function fixture(page: Page) {
     calls.push({ path, body, search: url.search });
     const send = (json: unknown, status = 200) =>
       route.fulfill({ status, contentType: "application/json", json });
+    if (path === "/v1/auth/notifications") return send({ enabled: true, email: "builder@example.invalid", verified: true, projectUpdates: true });
     if (path === "/v1/auth/session")
       return send({
         account: state.signedIn
@@ -296,7 +297,7 @@ test("removal requires confirmation and recovers an interrupted request", async 
   );
   await page.getByRole("button", { name: "Remove card", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByRole("status")).toContainText("4242 was removed");
+  await expect(page.locator("#payment-methods").getByRole("status")).toContainText("4242 was removed");
   await expect(
     page.getByRole("heading", { name: "No saved cards yet" }),
   ).toBeVisible();
@@ -326,15 +327,15 @@ test("only authoritative setup confirmation declares saved and pending setup can
   const { state } = await fixture(page);
   state.saved = false;
   await page.goto("/account?card=returned&session_id=cs_owned#payment-methods");
-  await expect(page.getByRole("status")).toContainText(
+  await expect(page.locator("#payment-methods").getByRole("status")).toContainText(
     "hasn’t finished saving",
   );
-  await expect(page.getByRole("status")).not.toContainText(
+  await expect(page.locator("#payment-methods").getByRole("status")).not.toContainText(
     "Stripe completed card setup",
   );
   state.saved = true;
   await page.getByRole("button", { name: "Check card setup" }).click();
-  await expect(page.getByRole("status")).toContainText(
+  await expect(page.locator("#payment-methods").getByRole("status")).toContainText(
     "Stripe completed card setup",
   );
   await expect(page).toHaveURL(/\/account#payment-methods$/);
@@ -353,7 +354,7 @@ test("cancel and foreign setup returns give honest feedback", async ({
   await expect(page.locator("main").getByRole("alert")).toContainText(
     "isn’t available",
   );
-  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(page.locator("#payment-methods").getByRole("status")).toHaveCount(0);
 });
 test("card list failure retries, pagination and provider unavailable states work", async ({
   page,

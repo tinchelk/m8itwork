@@ -1,3 +1,4 @@
+import { assertWorkAllowed, terminalStages } from "../project-access.js";
 import { randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient, type ReviewWorker, type ReviewJob } from "@prisma/client";
 import type { FastifyInstance, FastifyRequest } from "fastify";
@@ -46,7 +47,7 @@ export async function registerReviews(app: FastifyInstance, { prisma, env, githu
   const attempt = z.object({ attemptId: z.uuid() }).strict();
   async function active(tx: Prisma.TransactionClient, id: string, workerId: string, attemptId: string) {
     const job = await tx.reviewJob.findUnique({ where: { id }, include: { project: true, worker: { include: { operator: true } } } });
-    if (!job || job.status !== "RUNNING" || job.workerId !== workerId || job.attemptId !== attemptId || !job.leaseExpiresAt || job.leaseExpiresAt <= new Date() || !job.startedAt || Date.now() - job.startedAt.getTime() > 10 * 60_000 || job.worker?.revokedAt || !job.worker || !isOperator(job.worker.operator, env) || !job.project.aiReviewConsentAt || job.project.aiReviewConsentVersion !== REVIEW_POLICY) throw leaseLost();
+    if (!job || job.status !== "RUNNING" || job.workerId !== workerId || job.attemptId !== attemptId || !job.leaseExpiresAt || job.leaseExpiresAt <= new Date() || !job.startedAt || Date.now() - job.startedAt.getTime() > 10 * 60_000 || job.worker?.revokedAt || !job.worker || !isOperator(job.worker.operator, env) || (terminalStages.includes(job.project.stage) || job.project.cancellationRequestedAt) || !job.project.aiReviewConsentAt || job.project.aiReviewConsentVersion !== REVIEW_POLICY) throw leaseLost();
     const inspected = z.object({ commit: z.string() }).passthrough().safeParse(job.project.inspectionReport);
     if (job.project.repositoryUrl !== job.repositoryUrl || !inspected.success || inspected.data.commit !== job.commit) throw leaseLost();
     if ((job.parentJobId || job.comparisonId) && job.inputDigest !== inputDigest(await snapshot(tx, job.projectId), job.repositoryUrl, job.commit)) throw leaseLost();
@@ -154,6 +155,7 @@ export async function registerReviews(app: FastifyInstance, { prisma, env, githu
     return prisma.$transaction(async tx => {
       await reviewLock(tx);
       const project = await projectFor(account, projectId(request), false, tx);
+      if (input.consent) assertWorkAllowed(project);
       await touch(tx, project, input.version, { aiReviewConsentAt: input.consent ? new Date() : null, aiReviewConsentVersion: input.consent ? REVIEW_POLICY : null });
       if (!input.consent) await tx.reviewJob.updateMany({ where: { projectId: project.id, status: { in: ["QUEUED", "RUNNING"] } }, data: { status: "CANCELLED", completedAt: new Date(), leaseExpiresAt: null } });
       return { saved: true };
@@ -182,6 +184,7 @@ export async function registerReviews(app: FastifyInstance, { prisma, env, githu
         if (existing.projectId !== project.id || existing.provider !== input.provider || (existing.instructions ?? "") !== instructions || existing.parentJobId !== (input.parentJobId ?? null)) throw new AppError(409, "JOB_CONFLICT", "Start a new review request.");
         return { id: existing.id };
       }
+      assertWorkAllowed(project);
       if (!project.aiReviewConsentAt || project.aiReviewConsentVersion !== REVIEW_POLICY) throw new AppError(409, "AI_CONSENT_REQUIRED", "The customer must allow AI-assisted review in their dashboard first.");
       const commit = z.object({ commit: z.string().regex(/^[a-f0-9]{40}$/) }).passthrough().safeParse(project.inspectionReport);
       if (!project.repositoryUrl || !commit.success) throw new AppError(409, "REPOSITORY_REQUIRED", "Connect and inspect a repository first.");
@@ -223,6 +226,7 @@ export async function registerReviews(app: FastifyInstance, { prisma, env, githu
         if (existing.length !== 2 || new Set(existing.map(j => j.provider)).size !== 2 || existing.some(j => j.projectId !== project.id || (j.instructions ?? "") !== instructions)) throw new AppError(409, "JOB_CONFLICT", "Start a new comparison request.");
         return { id: input.id, jobs: existing.map(j => ({ id: j.id, provider: j.provider })) };
       }
+      assertWorkAllowed(project);
       if (!project.aiReviewConsentAt || project.aiReviewConsentVersion !== REVIEW_POLICY) throw new AppError(409, "AI_CONSENT_REQUIRED", "The customer must allow AI-assisted review in their dashboard first.");
       const commit = z.object({ commit: z.string().regex(/^[a-f0-9]{40}$/) }).passthrough().safeParse(project.inspectionReport);
       if (!project.repositoryUrl || !commit.success) throw new AppError(409, "REPOSITORY_REQUIRED", "Connect and inspect a repository first.");
@@ -300,7 +304,7 @@ export async function registerReviews(app: FastifyInstance, { prisma, env, githu
       const login = loginState((await tx.reviewWorker.findUniqueOrThrow({ where: { id: owner.id } })).loginRequest);
       if (login && loginActive(login.status)) return { job: null };
       if (await tx.reviewJob.count({ where: { workerId: owner.id, status: "RUNNING" } })) return { job: null };
-      const job = await tx.reviewJob.findFirst({ where: { status: "QUEUED", provider: { in: input.providers }, project: { aiReviewConsentAt: { not: null }, aiReviewConsentVersion: REVIEW_POLICY } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+      const job = await tx.reviewJob.findFirst({ where: { status: "QUEUED", provider: { in: input.providers }, project: { stage: { notIn: terminalStages }, cancellationRequestedAt: null, account: { closedAt: null }, aiReviewConsentAt: { not: null }, aiReviewConsentVersion: REVIEW_POLICY } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
       if (!job) return { job: null };
       if (job.parentJobId || job.comparisonId) {
         const project = await tx.project.findUniqueOrThrow({ where: { id: job.projectId } });
