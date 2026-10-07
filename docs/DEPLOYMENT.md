@@ -118,3 +118,17 @@ Reviewed milestone `0fc33f67048ad2292e4a6ac1bc05e284f1ff9ea8` passed all three i
 The first customer upload was interrupted and its failed deployment `7abfc657-68ac-475c-9aad-09ba87ad3d8f` was replaced by the successful exact-archive retry above. A separate Tin-Mac Docker pairing `81142787-5301-40bc-9036-4a2c64d4f4f9` was configured privately in named volume `m8itwork-review_worker_home`; only cached Codex auth was transferred, and the container doctor passed. Railway reports Codex READY. The previous native Tin-Mac LaunchAgent was stopped/disabled and its pairing revoked after verifying no active jobs. No customer job was fabricated, source processed or result published for these checks. Claude subscription login remains unverified.
 
 Remote Codex reconnect adds migration 011; backup `b55131b1-d0e1-4134-9045-be2c07808f55` is confirmed before its release. Its reviewed brief, verification and rollout/rollback order are in [REMOTE_WORKER_LOGIN.md](REMOTE_WORKER_LOGIN.md). This does not close outstanding live-payment or provider acceptance gates.
+
+## Remote Codex reconnect rollout — October 7, 2026
+
+Reviewed milestone `66ac55dcefd30a5c025726c31bbec3aa33d765b8` passed Staff Engineer, Product Owner and Product Designer gates with no new deferrals. [CI run 37631024574](https://github.com/tinchelk/m8itwork/actions/runs/37631024574) succeeded, including all 100 desktop/mobile browser checks and seven native Linux Docker checks. Local real-PostgreSQL verification passed all 112 backend tests; final lint/types and backend/customer/admin builds pass. Production backup `b55131b1-d0e1-4134-9045-be2c07808f55` was confirmed before migration 011. Exact Git archives excluded ignored secrets. Deployments all succeeded:
+
+| Service | Deployment |
+| --- | --- |
+| API | `d91e4ebc-8f18-48fa-9444-ceb2b583af02` |
+| Backoffice | `937537eb-6ea6-4fff-ac1c-bd2398e2a23a` |
+| Customer app | `2b04417f-a8d5-46dd-9756-e9ababdf528c` |
+
+Migration `202610070011_worker_login` finished at 13:46:10 UTC. API/backoffice were deployed before upgrading Docker to exact-archive image `9f985978858490d9bc593a2b243461a3078b17ff448f925f1a9daa7f02126ffe`, tagged `m8itwork-review-worker:66ac55d` and `:local`. The volume survived recreation, the Codex doctor passed, and the live container is running as node with a read-only root filesystem. A read-only Railway query confirmed Tin-Mac Docker is fresh, Codex READY and `remoteLogin=true`, with zero running reviews. API/dashboard/backoffice return HTTP 200; anonymous worker and operator login requests return 401 with the proper origin, and missing-origin operator writes return 403. No customer source or fabricated production review was processed/published for these checks.
+
+Actual device-prompt parsing and cancellation were verified privately against the pinned CLI in an ephemeral container. Subscription readiness on the live Docker worker is verified using the cached login transfer. A human completion of the new backoffice device-login flow is not claimed. On another host, start a paired worker and use its backoffice Reconnect Codex action for the initial sign-in. Claude still requires its own subscription login on the host. Retain additive migration 011 on rollback and coordinate the API/worker revision as described in [REMOTE_WORKER_LOGIN.md](REMOTE_WORKER_LOGIN.md).

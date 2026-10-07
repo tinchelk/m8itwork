@@ -39,7 +39,15 @@ docker compose -f compose.worker.yml run --rm -T worker configure
 
 Paste its private JSON, then press Ctrl+D on Unix terminals to finish stdin. The key is stored at `/home/node/.m8itwork/worker.json` with mode 600 inside the volume. Never put it in a command argument or Compose environment. Use the default `codex`/`claude` executable names; Mac-specific binary paths do not work in the Linux image. For Windows terminals, pipe a private JSON file into this command using your shell's stdin support, then remove that temporary file securely. Do not commit it.
 
-Sign in with Codex using device login:
+For initial remote Codex sign-in, start the paired worker:
+
+```sh
+docker compose -f compose.worker.yml up -d
+```
+
+It reports **Sign-in needed** even without a subscription login. In backoffice Worker setup, choose **Reconnect Codex**, open the displayed verification link and enter its one-time code. Wait for verified completion. Stop the service before running the standalone doctor/smoke commands below, then start it again.
+
+Alternatively, stop the worker and sign in with Codex using the host command:
 
 ```sh
 docker compose -f compose.worker.yml run --rm -it worker login-codex
@@ -87,3 +95,5 @@ Verified October 7, 2026:
 - Production backup `40f2ecc8-fa25-4de2-8909-7b38e5846c5b` (m8itwork-before-worker-operations-010) is confirmed before migration 010. Service rollout evidence is recorded separately in [DEPLOYMENT.md](DEPLOYMENT.md) after deploying the reviewed commit. Existing native workers remain compatible but do not report the new telemetry until upgraded.
 
 The user chose this Mac as the first Docker host. Tin-Mac Docker (`81142787-5301-40bc-9036-4a2c64d4f4f9`) is paired separately and reports Codex READY using a private cached-login transfer into its named volume. The old native Tin-Mac LaunchAgent was stopped and disabled, and its pairing revoked after verifying zero active jobs and Docker readiness. Moving to another machine and Claude subscription login remain outstanding; no production customer job is claimed. Each new host gets its own pairing connection and private volume. Existing paid-pilot/Stripe and other account-provider acceptance gates remain open.
+
+The remote reconnect release `66ac55d` is live on this Mac using image `9f9859788584`. Migration 011 is applied; Railway confirms Codex READY and remote reconnect enabled after volume-preserving recreation and a successful doctor. All three feature review gates, 112 real-PostgreSQL/backend tests, 100 CI browser checks and seven native Linux image checks pass. Human completion of the new browser sign-in is not claimed; actual device-prompt parsing/cancellation and cached-login readiness are verified separately. See [DEPLOYMENT.md](DEPLOYMENT.md) for immutable service/CI evidence.

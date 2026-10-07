@@ -1,5 +1,7 @@
 # Local review worker
 
+The current runtime is the Docker worker on this Mac; its predecessor native Tin-Mac LaunchAgent is stopped/disabled and its pairing revoked. Use [DOCKER_WORKER.md](DOCKER_WORKER.md) for current setup and [REMOTE_WORKER_LOGIN.md](REMOTE_WORKER_LOGIN.md) for backoffice Codex reconnect. Native Mac instructions below remain an alternative requiring a fresh pairing.
+
 Outcome: the operator queues a repository review in the backoffice, a local worker uses an existing Codex/Claude Code subscription to prepare a grounded review and effort range, and the operator edits/publishes the review and proposal through the existing agreement flow.
 
 Scope: operator-only job queue and private draft results; revocable worker pairing credentials; one claimed job per worker, fenced leases/heartbeats, bounded retries/cancellation; read-only source snapshots pinned to the intake commit; explicit customer AI-processing consent; Codex and Claude CLI adapters without API billing fallback; editable review/scope drafts and an operator-rate cost/working-day calculator. Railway holds job state; the worker makes outbound requests and requires no inbound public port. An asleep/offline worker leaves jobs queued.
