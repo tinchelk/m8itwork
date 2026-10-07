@@ -6,5 +6,5 @@ export default defineConfig([
   ...nextVitals,
   ...nextTypeScript,
   { rules: { "@next/next/no-html-link-for-pages": "off" } },
-  globalIgnores(["**/.next/**", "coverage/**", "playwright-report/**", "packages/api-client/src/generated/**"]),
+  globalIgnores(["**/.next/**", "coverage/**", "playwright-report/**", "test-results/**", "packages/api-client/src/generated/**", "apps/**/next-env.d.ts"]),
 ]);

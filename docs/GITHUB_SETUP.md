@@ -2,12 +2,26 @@
 
 Register a **GitHub App**, not an OAuth App with the broad `repo` scope. GitHub App user tokens combine the installed app's repository permissions with the user's own access. See [GitHub's user token documentation](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app).
 
-Private connection is required for launch. To prefill the local registration and save credentials without copying them through chat, run `npm --prefix backend run github:setup`, open <http://localhost:3122>, and review the registration on GitHub. The temporary utility uses [GitHub’s official manifest flow](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest), binds only to loopback, checks the one-time state, and writes the client ID/secret/slug and encryption key to ignored `backend/.env`. Restart the API afterward and stop the utility. Confirm expiring user access tokens in GitHub settings, then install on one selected private test repository and perform the checks below. For an existing App or production configuration, use the manual steps instead of creating a duplicate.
+Production already uses **m8itwork**, App ID `5215361`, owned by `tinchelk`. It is installed read-only on the single explicitly approved private repository. Real HTTPS sign-in, private static scanning, disconnect/reconnect, and operator access were verified October 6, 2026; see [DEPLOYMENT.md](DEPLOYMENT.md). Reuse this registration and do not create a duplicate. The instructions below also support new environments and the remaining live checks.
+
+Private connection is required for launch. To prefill the local registration and save credentials without copying them through chat, run `npm --prefix backend run github:setup`, open <http://localhost:3122>, and review the registration on GitHub. The temporary utility uses [GitHub’s official manifest flow](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest), binds only to loopback, checks the one-time state, and writes the client ID/secret/slug and encryption key to ignored `backend/.env`. Restart the API afterward and stop the utility. Confirm expiring user access tokens in GitHub settings, then install on one selected private test repository and perform the checks below. For an existing App, edit its settings rather than creating a duplicate.
+
+For a new App serving the Railway deployment, run:
+
+```sh
+GITHUB_SETUP_FRONTEND_ORIGIN=https://m8itwork.com \
+GITHUB_SETUP_API_ORIGIN=https://api.m8itwork.com \
+npm --prefix backend run github:setup
+```
+
+Review the manifest before registration: homepage `https://m8itwork.com`, setup URL `https://m8itwork.com/dashboard`, callback `https://api.m8itwork.com/v1/github/callback`, plus the local API callback for development. The temporary manifest-conversion redirect remains on localhost:3122 and saves credentials only locally. Webhook configuration is omitted because GitHub rejects localhost webhook URLs even when inactive.
+
+After registration, securely transfer `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_APP_SLUG`, and `TOKEN_ENCRYPTION_KEY` from ignored backend/.env into the **new m8itwork Railway API** production variables, using CLI stdin for secrets. Redeploy that API. Set its `FRONTEND_ORIGIN` and `PUBLIC_API_URL` to the exact public origins above. Keep the encryption key stable; never print secrets, commit them, or copy another project's credentials. Confirm the deployed connection endpoint initiates OAuth with the public callback before attempting real login/private inspection.
 
 1. In GitHub Settings → Developer settings → GitHub Apps, create a pilot app such as `m8itwork-review` (names must be globally unique).
 2. Homepage: `http://localhost:3120` for local testing, or the deployed HTTPS site.
-3. Callback URL: `http://localhost:3121/v1/github/callback`. The backend's `PUBLIC_API_URL` must match its origin exactly.
-4. Setup URL: `http://localhost:3120/#review`. Leave **Request user authorization during installation** off; the website initiates OAuth itself with session-bound state and PKCE. Enable expiring user access tokens. Webhooks are not needed for this milestone.
+3. Callback URLs: `https://api.m8itwork.com/v1/github/callback` and, for development, `http://localhost:3121/v1/github/callback`. The backend's `PUBLIC_API_URL` must match the desired callback origin exactly.
+4. Setup URL: `https://m8itwork.com/dashboard` for production or `http://localhost:3120/dashboard` locally. The existing registered App’s `/workspace` setup URL redirects compatibly to `/dashboard`. Leave **Request user authorization during installation** off; the website initiates OAuth itself with session-bound state and PKCE. Enable expiring user access tokens. Webhooks are not needed for this milestone.
 5. Repository permissions: **Contents: Read-only** and GitHub's required **Metadata: Read-only**. No write or organization permissions. The connection endpoint verifies the registered app's declared permissions before redirecting a visitor.
 6. Allow installation on other accounts if this is for external pilot clients. Install on **selected repositories** only.
 7. Generate a client secret and put the client ID, secret, app slug, and a generated 32-byte base64 encryption key into `backend/.env`. Restart the API.
@@ -29,3 +43,5 @@ Keep the resulting key stable while sessions exist. Changing it invalidates encr
 OAuth state expires after ten minutes and is consumed once. Tokens are AES-256-GCM encrypted in PostgreSQL, are not logged, and are used for at most eight hours. There is no persistent refresh token. Browser sessions expire after 24 hours; run the cleanup command daily.
 
 The pilot limits repository lists to five installations and 100 repositories per installation. Users may paste an authorized repository link when it is not listed. Inspection is limited to 3,000 tree entries and eight manifests of at most 64 KB each; limitations appear in the report. Public unauthenticated GitHub API limits can affect scans. This pilot does not use a global personal token that could expose the operator's private repositories to visitors.
+
+Customer login/reconnect returns to `/dashboard`. The separate backoffice uses `flow=admin` and returns to the API’s exact `ADMIN_ORIGIN`; it uses the same public API OAuth callback. The flow selects a destination, never an operator role. Both frontend origins must be allowed in API configuration; operator access still requires the numeric allowlist.

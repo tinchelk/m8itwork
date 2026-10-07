@@ -76,7 +76,7 @@ describe.skipIf(!dbUrl)("durable intake and private GitHub connection", () => {
         }
         if (path === "/user") {
           expect(headers.get("authorization")).toBe(`Bearer ${token}`);
-          return Response.json({ login: "builder" });
+          return Response.json({ login: "builder", id: 123456 });
         }
         if (path === "/user/installations")
           return Response.json({ total_count: 1, installations: [{ id: 10 }] });

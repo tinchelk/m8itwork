@@ -1,0 +1,11 @@
+.env
+.env.*
+node_modules
+.next
+test-results
+playwright-report
+
+**/node_modules
+**/.next
+**/.env
+**/.env.*

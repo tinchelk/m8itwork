@@ -22,11 +22,19 @@ services:
       NODE_ENV: development
       PORT: 3121
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3120}
+      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:3123}
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:3121}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+      OPERATOR_GITHUB_IDS: ${OPERATOR_GITHUB_IDS:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
     ports:
       - "127.0.0.1:3121:3121"
     depends_on:
@@ -38,8 +46,23 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3121}
+        NEXT_PUBLIC_CUSTOMER_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3120}
+        NEXT_PUBLIC_ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:3123}
     ports:
       - "127.0.0.1:3120:3120"
+    depends_on:
+      - backend
+  admin:
+    profiles: ["app"]
+    build:
+      context: ./frontend
+      args:
+        APP: admin
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3121}
+        NEXT_PUBLIC_CUSTOMER_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3120}
+        NEXT_PUBLIC_ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:3123}
+    ports:
+      - "127.0.0.1:3123:3120"
     depends_on:
       - backend
 volumes:

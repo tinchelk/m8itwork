@@ -13,11 +13,18 @@ try {
       oauthStateHash: null,
       oauthExpiresAt: null,
       verifierEncrypted: null,
+      oauthAttemptId: null,
+      oauthPurpose: null,
+      oauthAccountId: null,
+      oauthNonceHash: null,
     },
   });
   const result = await prisma.reviewSession.deleteMany({
     where: { expiresAt: { lt: now } },
   });
+  await prisma.accountSession.deleteMany({ where: { expiresAt: { lt: now } } });
+  await prisma.accountToken.deleteMany({ where: { expiresAt: { lt: now } } });
+  await prisma.authThrottle.deleteMany({ where: { expiresAt: { lt: now } } });
   console.log(
     `Removed ${result.count} expired browser sessions. Submitted briefs are retained.`,
   );

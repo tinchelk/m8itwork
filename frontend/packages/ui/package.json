@@ -1,0 +1,14 @@
+{
+  "name": "@m8itwork/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./styles/*": "./src/styles/*"
+  },
+  "peerDependencies": {
+    "next": "^16.3.8",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  }
+}

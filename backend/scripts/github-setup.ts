@@ -8,23 +8,22 @@ import { z } from "zod";
 // Operator-only, temporary loopback utility. This is never served by the API.
 const envPath = fileURLToPath(new URL("../.env", import.meta.url));
 const current = parse(await readFile(envPath));
+const frontendOrigin = z.url().parse(process.env.GITHUB_SETUP_FRONTEND_ORIGIN ?? current.FRONTEND_ORIGIN ?? "http://localhost:3120");
+const apiOrigin = z.url().parse(process.env.GITHUB_SETUP_API_ORIGIN ?? current.PUBLIC_API_URL ?? "http://localhost:3121");
+const productionTarget = frontendOrigin.startsWith("https://");
 const origin = "http://localhost:3122";
 const state = randomBytes(32).toString("base64url");
 const manifest = {
   name: "m8itwork-review",
-  url: current.FRONTEND_ORIGIN ?? "http://localhost:3120",
+  url: frontendOrigin,
   redirect_url: `${origin}/callback`,
   callback_urls: [
-    `${current.PUBLIC_API_URL ?? "http://localhost:3121"}/v1/github/callback`,
+    ...new Set([`${apiOrigin}/v1/github/callback`, `${current.PUBLIC_API_URL ?? "http://localhost:3121"}/v1/github/callback`, "http://localhost:3121/v1/github/callback"]),
   ],
-  setup_url: `${current.FRONTEND_ORIGIN ?? "http://localhost:3120"}/#review`,
+  setup_url: `${frontendOrigin}/dashboard`,
   description:
     "Read-only repository inspection for m8itwork project assessments. No code changes.",
   public: true,
-  hook_attributes: {
-    url: `${current.PUBLIC_API_URL ?? "http://localhost:3121"}/v1/github/events`,
-    active: false,
-  },
   request_oauth_on_install: false,
   default_permissions: { contents: "read", metadata: "read" },
   default_events: [],
@@ -59,8 +58,8 @@ const server = createServer(async (request, response) => {
     response.end(
       document(
         configured
-          ? '<h1>GitHub App configured.</h1><p>Credentials are saved in backend/.env. Restart the API, then connect GitHub and install the App on a selected private test repository.</p><p><a href="http://localhost:3120/#review">Open m8itwork</a></p>'
-          : `<h1>Connect private repositories.</h1><p>Register the m8itwork GitHub App under your signed-in GitHub account. GitHub will ask you to confirm its name and permissions.</p><ul><li>Repository contents and metadata: read-only.</li><li>No write permissions, account permissions, or webhook events.</li><li>Available to pilot clients. Each installation chooses which repositories to share.</li><li>Local callbacks for this development setup.</li></ul><p>The callback saves the client secret directly to your local backend/.env. Credentials are never displayed or added to Git.</p><form action="https://github.com/settings/apps/new?state=${state}" method="post"><input type="hidden" name="manifest" value="${escape(JSON.stringify(manifest))}"><button type="submit">Review registration on GitHub ↗</button></form><details><summary>Review the configuration</summary><pre>${escape(JSON.stringify(manifest, null, 2))}</pre></details>`,
+          ? `<h1>GitHub App registered. Credentials saved locally.</h1><p>The four connection values are saved in backend/.env.</p><p>${productionTarget ? "Securely transfer those values to the new Railway API service and redeploy it before testing sign-in or private access." : "Restart the local API before testing sign-in or private access."}</p><p>Then install the App on a selected private test repository and verify its inspection.</p><p><a href="${escape(frontendOrigin)}/dashboard">Open m8itwork workspace</a></p>`
+          : `<h1>Connect private repositories.</h1><p>Register the m8itwork GitHub App under your signed-in GitHub account. GitHub will ask you to confirm its name and permissions.</p><ul><li>Repository contents and metadata: read-only.</li><li>No write permissions, account permissions, or webhook events.</li><li>Available to pilot clients. Each installation chooses which repositories to share.</li><li>Website: ${escape(frontendOrigin)}. API: ${escape(apiOrigin)}.</li><li>Local development callback included for testing.</li></ul><p>The temporary registration callback saves the client secret directly to your local backend/.env. Credentials are never displayed or added to Git.</p><form action="https://github.com/settings/apps/new?state=${state}" method="post"><input type="hidden" name="manifest" value="${escape(JSON.stringify(manifest))}"><button type="submit">Review registration on GitHub ↗</button></form><details><summary>Review the configuration</summary><pre>${escape(JSON.stringify(manifest, null, 2))}</pre></details>`,
       ),
     );
     return;
@@ -138,7 +137,7 @@ const server = createServer(async (request, response) => {
     await rename(`${envPath}.setup`, envPath);
     configured = true;
     console.log(
-      "GitHub App configured. Credentials saved locally; restart the API and verify a private repository.",
+      "GitHub App registered. Credentials saved locally; configure the target API and verify a private repository.",
     );
     response.writeHead(303, { Location: origin }).end();
   } catch {

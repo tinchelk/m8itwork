@@ -5,3 +5,8 @@ node_modules
 !*.example
 playwright-report
 test-results
+
+**/node_modules
+**/.next
+**/.env
+**/.env.*

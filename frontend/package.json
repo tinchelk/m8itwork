@@ -1,5 +1,5 @@
 {
-  "name": "m8itwork-frontend",
+  "name": "m8itwork-frontends",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,17 +7,16 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "dev": "next dev --hostname 0.0.0.0 --port 3120",
-    "build": "next build",
-    "start": "next start --port 3120",
+    "dev": "npm run dev:customer",
+    "dev:customer": "npm run dev --workspace @m8itwork/customer",
+    "dev:admin": "npm run dev --workspace @m8itwork/admin",
+    "build": "npm run build --workspaces --if-present",
+    "build:customer": "npm run build --workspace @m8itwork/customer",
+    "build:admin": "npm run build --workspace @m8itwork/admin",
+    "start": "npm run start --workspace @m8itwork/customer",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit",
     "test:e2e": "playwright test"
-  },
-  "dependencies": {
-    "next": "^16.3.8",
-    "react": "19.2.7",
-    "react-dom": "19.2.7"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
@@ -30,5 +29,9 @@
   },
   "overrides": {
     "postcss": "^8.5.10"
-  }
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
 }

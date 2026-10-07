@@ -1,8 +1,8 @@
 # m8itwork
 
-Finish, fix, and extend apps started with AI. Milestone 1 is a service site, read-only GitHub connection, initial repository inventory, and durable project intake for launch help and custom development.
+Finish, fix, and extend apps started with AI. The service site and customer dashboard and operator backoffice cover read-only private repository intake, human review, agreed scope and estimates, conversations, Stripe payments, delivery tracking, and verification/handover.
 
-This uses the Next.js/Fastify/Prisma foundation and review workflow from `tinchelk/growth-ai` (`99324a4`), with its growth-marketing product removed. Next.js has been updated to a patched release. Consulting assessments and scoped project fees replace the former subscription/credit model; payment collection is future work.
+This uses the Next.js/Fastify/Prisma foundation and review workflow from `tinchelk/growth-ai` (`99324a4`), with its growth-marketing product removed. Next.js has been updated to a patched release. Consulting assessments and scoped project fees replace the former subscription/credit model; project payments use one-time Stripe Checkout, upfront or in agreed installments. The app is deployed on Railway. Real GitHub login, selected private scanning, disconnect/reconnect, and operator access pass; the full customer-project and Stripe sandbox journeys remain open. No live payment has occurred.
 
 ## Run locally
 
@@ -26,13 +26,13 @@ npm --prefix backend run dev
 npm --prefix frontend run dev
 ```
 
-Open <http://localhost:3120>. Public repository inspection and manual briefs work without provider credentials. An all-container development launch is also available with `make dev` (use `docker compose --env-file backend/.env --profile app up --build` to pass configured GitHub credentials).
+Open <http://localhost:3120>. Public repository inspection and manual briefs work without provider credentials. An all-container development launch is also available with `make dev` (use `docker compose --env-file backend/.env --profile app up --build` to pass configured backend provider credentials). Email signup uses `RESEND_API_KEY` and `EMAIL_FROM`; Google uses a dedicated `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` and a callback matching the environment's `PUBLIC_API_URL`. Provider secrets are passed only to the backend. See [account setup and verification](docs/ACCOUNT_SIGNUP.md).
 
 ## GitHub connection
 
 See [docs/GITHUB_SETUP.md](docs/GITHUB_SETUP.md). Private access requires a registered GitHub App, its client ID/secret/slug, and a local encryption key. OAuth and API credentials never go into the browser or Git repository.
 
-Private connection is required for launch. Run `npm --prefix backend run github:setup` to prepare the registration locally at <http://localhost:3122>; GitHub sign-in and registration approval are completed in your browser. The helper stores credentials directly in ignored `backend/.env`. Restart the API and perform the real private-repository checks in the setup guide. Current verification and remaining gates are recorded in [docs/VERIFICATION.md](docs/VERIFICATION.md).
+Private connection is required for launch. The production App **m8itwork** is registered and configured; reuse it. For another environment, the setup guide describes registration and secure configuration. The helper stores credentials directly in ignored `backend/.env`. Current verification and remaining gates are recorded in [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 The scanner reads a pinned commit's file tree and up to eight package manifests. It does not execute code, fetch submitted demo URLs, access secret files, or call an AI model. Reports show observed evidence, limitations, an approximate **human assessment allowance**, and checks required before a project estimate. A dependency declaration does not prove a workflow works. This is an inventory and triage starting point, not a full code review or security audit.
 
@@ -46,7 +46,7 @@ npm --prefix backend run cleanup
 
 `leads` lists the latest 100 submissions through the operator's database connection. Check it daily during the pilot. Review those submissions and contact the builder about a paid assessment. Record progress with `lead:status`: `CONTACTED`, `ASSESSMENT_PROPOSED`, `ASSESSMENT_PAID`, `PROJECT_PROPOSED`, `PROJECT_PAID`, `COMPLETED`, or `DECLINED`. Mark a paid stage only after confirming the actual payment. Keep proposal details and invoices in your private business records; use the submission UUID to connect them. Track proposals and paid projects as the pilot's conversion outcomes, aiming for one paying client.
 
-This pilot does not yet send acknowledgment emails or notifications automatically. Run cleanup daily to remove expired sessions, encrypted credentials, and unsubmitted inspections. Submitted briefs and summaries are retained separately; process deletion requests through the database. Keep database access restricted and back up submitted briefs.
+Resend delivers account verification and password-recovery emails when configured. Project acknowledgment emails and notifications are not automated. Run cleanup daily to remove expired sessions, encrypted credentials, and unsubmitted inspections. Submitted briefs and summaries are retained separately; process deletion requests through the database. Keep database access restricted and back up submitted briefs.
 
 ## Verification
 
@@ -58,10 +58,35 @@ npm --prefix frontend exec -- playwright install chromium
 npm --prefix frontend run test:e2e
 ```
 
-Integration tests require a dedicated `m8itwork_test` database and clean up only their own fixtures. Browser tests cover success/failure, inspection attachment, keyboard interaction, and narrow screens; GitHub provider responses are mocked there. Live private GitHub authorization must be verified after App registration. CI runs the database tests and browser checks.
+Integration tests require a dedicated `m8itwork_test` database and clean up only their own fixtures. Browser tests cover success/failure, inspection attachment, keyboard interaction, and narrow screens; GitHub provider responses are mocked there. Separate real GitHub verification and remaining acceptance checks are recorded in the verification/deployment documents. CI runs the database tests and browser checks.
 
 ## Deployment notes
 
-Frontend and backend are independent apps with Dockerfiles. Build the frontend with the public API URL. Production requires HTTPS origins under the same site (for example `m8itwork.com` and `api.m8itwork.com`), durable PostgreSQL, GitHub production callback settings, backups, and a cleanup job. Do not use the local database password in production. Configure rate limiting/proxy IP handling for your hosting provider before accepting internet traffic; current limits are per API process. No deployment has been performed.
+The frontend contains independently built `apps/customer` and `apps/admin` Next.js workspaces, with shared source in `packages/ui`. Docker selects `APP=customer` or `APP=admin` on Node22. The API is a separate service. Deployments use the committed implementation checkpoint in this repository; the exact revision and Railway deployment IDs are recorded in the release handoff. The separate m8itwork Railway project has dedicated PostgreSQL at [m8itwork.com](https://m8itwork.com) and [api.m8itwork.com](https://api.m8itwork.com/health). Cloudflare preserves HTTPS and redirects www to the apex. Daily volume backups are enabled; leads review and expired-session cleanup currently use the authenticated CLI manually. Railway-specific IP handling was verified against forged headers; general API limits are per process and account endpoints also use durable PostgreSQL identity/network throttles. See [deployment evidence and operations](docs/DEPLOYMENT.md), including the passed real GitHub login/private scan and remaining customer-project/Stripe checks.
 
 See [docs/PRODUCT_DIRECTION.md](docs/PRODUCT_DIRECTION.md) and [docs/HANDOFF.md](docs/HANDOFF.md) for scope and acceptance criteria.
+
+## Customer dashboard
+
+The customer dashboard is at <http://localhost:3120/dashboard> (production <https://m8itwork.com/dashboard>). Customers sign in with verified email/password, Google, or their existing GitHub identity, then start owned projects and add bugs, features, suggestions, PRD text, or questions. A demo and brief can be submitted before optionally connecting a private repository. After submission, the team publishes a human review and a versioned proposal with scope, acceptance checks, cost/currency, estimated delivery date, and assumptions. The customer approves the current version before building; revised proposals require new approval. The workspace shows progress updates and verification/handover evidence. Milestone 3 adds payments and the admin desk described below. Estimates remain human proposals, with explicit assumptions.
+
+Set `OPERATOR_GITHUB_IDS` in the server environment to the comma-separated numeric GitHub IDs of explicitly trusted project-team operators, then restart the API. Usernames and contact emails never grant operator access. Signed-in operators see a Backoffice link to the separate admin app; the customer dashboard never switches to a team mode. The allowlist is empty by default; no customer can assign their own role.
+
+Account sessions last up to 30 days and are independent of the 24-hour inspection session/eight-hour repository token. Logout revokes the browser-bound account session and cancels pending OAuth. Saved project summaries persist after inspection-session cleanup. No anonymous submission is claimed merely because its contact email matches an account; the existing quick brief continues to use email follow-up.
+
+Customer project/request/conversation and operator form drafts use per-tab storage for one hour, bound to the signed-in account and project, to survive reauthentication. Successful saves and explicit sign-out clear drafts; approval acknowledgments are never restored. Requests added once building starts are separately scoped follow-on work; see the pilot procedure in the milestone brief.
+
+See [docs/MILESTONE_2.md](docs/MILESTONE_2.md) for acceptance and exclusions. Live GitHub sign-in/private scanning now pass; project/PRD/proposal and second-account verification remain open. Mocked provider tests do not close those remaining gates.
+
+
+## Backoffice, agreement, and delivery
+
+Open the separate admin app at <http://localhost:3123> (production <https://admin.m8itwork.com>) after configuring an explicitly trusted numeric GitHub ID. The queue shows submitted projects, shared team unread status, and outstanding agreed payments. Team members reply in the project conversation, keep private team notes, publish reviews, and propose upfront, deposit/final, three-stage, or custom schedules (one to six installments totaling the scope).
+
+Publishing a proposal records the team’s agreement; customer approval records theirs. Approval requests the first installment. Stripe confirmation unlocks building; the team requests later installments at their agreed stages. Delivery items need recorded checks before Done, and completion requires all items done, all due payments confirmed, and verification/handover evidence. Refunds, disputes, overpayments, and differing payment modes block advancement and need team review. A paid scope is revised through a separately agreed follow-on project.
+
+Messages poll while the workspace is visible; incoming messages are marked read when their headings are visible. The team read marker is shared by operators. There are no email notifications. Unsaved drafts last one hour in the current tab; explicit sign-out clears them.
+
+See [docs/STRIPE_SETUP.md](docs/STRIPE_SETUP.md) for server-only configuration and sandbox verification, and [docs/MILESTONE_3.md](docs/MILESTONE_3.md) for the implementation scope. Expire pending Checkout before revising an unpaid proposal. An uncertain session is recovered by its existing Stripe session ID, rather than by creating another charge. Never treat the Checkout return URL, a fixture, or test-mode balance as real payment.
+
+Run customer development with `npm --prefix frontend run dev:customer` and the backoffice with `npm --prefix frontend run dev:admin`. Configure backend `ADMIN_ORIGIN` and frontend `NEXT_PUBLIC_CUSTOMER_ORIGIN`/`NEXT_PUBLIC_ADMIN_ORIGIN` alongside the API URL. Existing `/workspace` and customer-site `/admin` links redirect to their new destinations and preserve project/payment parameters. See [dashboard/backoffice acceptance](docs/DASHBOARD_BACKOFFICE.md).
