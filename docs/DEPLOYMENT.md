@@ -190,3 +190,27 @@ Local final verification passed all 148 browser checks, frontend lint/typecheck 
 
 
 [Code CI run 37648304190](https://github.com/tinchelk/m8itwork/actions/runs/37648304190) succeeded for the exact milestone SHA. It passed 132 backend tests and seven native Linux worker-container checks. Browser CI completed all 148 checks: 147 passed first time, and the existing mobile full delivery/handover journey exceeded its 30-second total test budget at the final handover assertion and passed the configured retry. This is the same timing pattern recorded in the prior comparison rollout, not a failed styled-field assertion; all 14 new field checks passed without a retry. The local full suite passed all 148 without retries. No real payment or provider acceptance is implied by these fixture checks.
+
+## Customer Account and Billing — October 7, 2026
+
+Reviewed milestone `8af7334aa4e7ee1873a2484f116b9a497805c8c5` removes Website from customer navigation and adds Account card management plus account-wide Billing, due installments, payment history, receipts and available invoices. Stripe-hosted setup collects card details without a charge. Project Checkout reuses the owned account/mode customer, while card removal and setup returns verify ownership and current provider state. See [CUSTOMER_BILLING.md](CUSTOMER_BILLING.md) for scope, acceptance, recovery behavior and the three passed review gates.
+
+Exact Git archives excluded ignored credentials and runtime files. Dedicated Stripe sandbox server/webhook secrets were transferred through CLI stdin only to the API's Railway variables, with deploys deferred until both were configured. No secret was passed in argv, printed or committed. The publishable key is unnecessary for hosted Checkout.
+
+| Resource | Verified release identifier |
+| --- | --- |
+| API deployment | `068b3fbe-d0d0-4baa-b9a5-23863e2b84c2` — SUCCESS |
+| Customer deployment | `f2ca7dab-f149-4008-b2c4-72af980fe837` — SUCCESS |
+| Backoffice deployment | `cf5b8598-3fd9-4df8-b9ba-f26b2f899151` — SUCCESS |
+| Listed volume backup before migration 013 | `f7b230e4-1358-4ffe-bfa3-ea683376208c` |
+| Applied migration | `202610070013_customer_billing` — startup confirmed all migrations applied |
+| Dedicated sandbox webhook | `we_1UNxoY9R05CEnaVmL0AJ4pC8` — enabled, includes `invoice.paid` |
+| Code CI run | [37656452771](https://github.com/tinchelk/m8itwork/actions/runs/37656452771) — SUCCESS |
+
+Local and GitHub CI verification passed all 148 backend tests, all 178 desktop/mobile browser checks without retries, lint, types and both frontend builds. CI also passed seven native Linux worker-container checks. Staff independently passed 35 focused backend/SDK tests and all 30 billing browser checks; Staff, Product and Designer gates have no remaining feature blockers. The Docker worker source, image and credentials were not changed or deployed for this release.
+
+Runtime verification: public homepage, Dashboard, Account, Billing, backoffice and API health returned HTTPS 200. Anonymous Billing/card-list requests returned 401; a foreign-origin setup write returned 403. An invalid webhook signature returned 400; a locally signed test invoice event for no application attempt returned 200 without recording a payment. This probe confirms signing configuration, rather than an actual Stripe event delivery or completed financial transaction.
+
+Real signed-in Chrome verification showed the complete Account UI with Add card, connected Google recovery, consistent Dashboard/Billing/Account navigation and no Website link. Add card opened the real Stripe sandbox hosted setup; cancelling returned to Account with explicit unchanged-card feedback and no saved card. That open setup probe was subsequently expired through Stripe. Billing loaded the customer's real empty state, and its styled filter dismissed with Escape and restored combobox focus. Screenshots remain only in ignored `backend/var/preview-billing-account-production.png`, `preview-billing-production.png` and `preview-billing-filter-production.png`.
+
+No real card was saved/removed and no payment was collected. The supplied provider is test mode; Stripe reports live charges disabled and details not submitted. Live merchant activation, dedicated live credentials/webhook and authorized financial verification remain required before collecting customer money. For code rollback, leave additive migration 013's tables/columns in place and select the prior successful service deployments; do not run a destructive down migration.
