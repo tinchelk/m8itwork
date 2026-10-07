@@ -169,3 +169,24 @@ Public runtime checks: homepage, customer dashboard, backoffice and API health r
 The existing Tin-Mac Docker worker (`81142787-5301-40bc-9036-4a2c64d4f4f9`) remains running on image `9f9859788584`, reports a fresh Codex READY heartbeat and remote reconnect enabled, and has no running jobs. This release does not change its image, private volume, pairing key or Codex-only provider configuration. Worker transport is unchanged. Claude subscription/login setup and an authenticated Claude proposal/comparison are deferred by the user's explicit choice; queued Claude work waits for an enabled authenticated worker. Existing real-provider and paid-pilot acceptance gates remain separate.
 
 For code rollback, leave migration 012 and comparison data in place. Prior API versions still enforce their single-active-run checks, and prior workers understand individual jobs. Do not restore the old one-active-job index while a comparison has two active members; use unfinished-only cancellation when needed. No destructive down-migration is part of service rollback.
+
+
+## Styled customer and backoffice fields — October 7, 2026
+
+Reviewed UI milestone `96aca291fd17e1507b581b7d2e0aa08efcb841f9` replaces every visible native dropdown with shared navy/teal web menus. Repository menus include identity icons, private/public badges and selection feedback. Delivery dates use the matching keyboard calendar, and checkboxes/text/numeric fields use consistent focus, validation, disabled and mobile sizing. Existing form names, API payloads, account-scoped drafts and successful resets are preserved. See [STYLED_FIELDS.md](STYLED_FIELDS.md) for the acceptance and review evidence.
+
+The two frontend uploads used an exact Git archive of this revision, excluding ignored environment files and runtime assets:
+
+| Service | Successful deployment |
+| --- | --- |
+| Customer app | `ad7755df-a3af-42ab-97ee-68773e0198ab` |
+| Backoffice | `b1b62b33-9a6b-4a0d-9cf3-75e248362229` |
+
+Both Railway deployments report SUCCESS. Customer dashboard and backoffice return HTTPS 200, and their published CSS includes the shared menu, calendar and checkbox rules. The unchanged API health remains 200. The API, database and Docker worker were not redeployed; there is no migration or new external permission.
+
+Real Chrome verification on the deployed customer dashboard confirmed that the previously selected private repository remains selected. Its open menu uses the navy theme, fits the viewport, exposes no visible native select/date input, and Escape returns focus to the combobox. The screenshot is saved only in ignored `backend/var/preview-styled-fields-production.png`. No customer request, review, proposal, message or payment was submitted during runtime verification. The browser's current account is a customer identity; the backoffice correctly denies team access. Authenticated operator controls are covered by the desktop/mobile fixture suite, rather than claimed as a live operator check.
+
+Local final verification passed all 148 browser checks, frontend lint/typecheck and both production builds. The loaded calendar screenshot checks were repeated and passed on desktop/mobile. Staff Engineer, Senior Product Owner and Senior Product Designer reviews all pass with no remaining or deferred feature findings. For a frontend rollback, select the previous successful customer/backoffice deployments; no API, schema or worker rollback is required.
+
+
+[Code CI run 37648304190](https://github.com/tinchelk/m8itwork/actions/runs/37648304190) succeeded for the exact milestone SHA. It passed 132 backend tests and seven native Linux worker-container checks. Browser CI completed all 148 checks: 147 passed first time, and the existing mobile full delivery/handover journey exceeded its 30-second total test budget at the final handover assertion and passed the configured retry. This is the same timing pattern recorded in the prior comparison rollout, not a failed styled-field assertion; all 14 new field checks passed without a retry. The local full suite passed all 148 without retries. No real payment or provider acceptance is implied by these fixture checks.
