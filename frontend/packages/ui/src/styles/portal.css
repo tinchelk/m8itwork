@@ -1217,3 +1217,16 @@
 .worker-login .button { margin: 8px 8px 8px 0; }
 .worker-login-code { font-family: var(--font-mono), monospace; font-size: 1.2rem; letter-spacing: .08em; white-space: nowrap; }
 .portal-shell .worker-login a.button:not(.outline):hover { color: #17252e; }
+.review-comparison { border-top: 1px solid #426275; padding-top: 22px; margin: 22px 0; }
+.review-comparison h4 { font-size: 1.2rem; margin: 0 0 12px; }
+.comparison-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 20px; }
+.comparison-card { min-width: 0; border: 1px solid #496779; border-radius: 12px; background: #0b1e2c; padding: 20px; overflow-wrap: anywhere; }
+.comparison-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; justify-content: space-between; }
+.comparison-title h5 { margin: 0; font-size: 1.25rem; color: #9be7db; }
+.comparison-title span { color: #d8eeeb; font-size: .9rem; }
+.comparison-card h6 { font-size: 1rem; margin: 20px 0 8px; }
+.comparison-card details > summary { cursor: pointer; font-weight: 700; }
+.comparison-effort { display: grid; gap: 6px; }
+.comparison-effort span { color: #b6cad1; }
+.comparison-card .review-controls { align-items: center; }
+@media (max-width: 900px) { .comparison-grid { grid-template-columns: minmax(0, 1fr); } }

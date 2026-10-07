@@ -84,6 +84,18 @@ The restart policy retries unexpected failures up to five times and leaves grace
 
 For updates, stop the service, check out the reviewed revision, build, run doctor/smoke and start it again. CLI versions are pinned in `worker/package-lock.json`; update them only after checking adapter flags and rerunning verification. There is no automatic image publication or registry credential requirement. The operator status and conversation views require the accompanying API/frontend release and additive migrations 010 and 011. Back up the production database before that release. Existing workers remain queue-compatible; upgrade them to report provider readiness and activity. The website does not receive provider login credentials.
 
+## Handoffs and proposal comparisons
+
+In a project's **Prepare a review** section, choose **Codex + Claude · compare** and queue **Compare proposals**. The API saves two independent jobs together with the same repository commit, customer request snapshot and instructions. No previous replies are included. One Docker worker runs enabled providers in sequence; independent workers may handle each job. The existing worker image and pairing protocol support these jobs without an upgrade.
+
+The private comparison shows scope, evidence, acceptance checks, assumptions, questions, effort and confidence separately for each agent. **Plan cost & working time** uses your shared hourly rate, uncertainty buffer and daily availability; these are preliminary ranges, not a final price or date. **Add Codex/Claude scope to draft** appends scope, checks and assumptions to the editable proposal, preserving any existing text. Review and edit the combined draft before publishing. Publishing remains a separate operator action.
+
+Use **Continue with Claude** on a Codex reply or **Continue with Codex** on a Claude reply to carry the latest three validated reply summaries into a follow-up. This is shared project context, rather than transferring a provider's native chat or hidden reasoning. Changing to the comparison option clears the selected prior reply so both new proposals remain independent. Changed requests or repository evidence block imports and handoffs until a fresh review.
+
+Claude setup remains deferred: the live Mac worker enables only Codex. A queued Claude proposal waits for a worker configured with `"claude"` and its own Claude subscription login. Codex's completed proposal remains usable while Claude waits or fails. **Cancel unfinished comparison** stops only unfinished jobs, preserves completed drafts and releases the project for another review. Follow the Claude configuration/login instructions above when the subscription is ready.
+
+Migration 012 adds comparison IDs and replaces the one-active-job-per-project index with one active job per project/provider. The shared transaction lock still admits just one run per project, with a comparison containing two jobs. Back up before deploying. For a code rollback, leave migration 012 and its data/indexes in place: previous API/worker versions still understand individual jobs and their active-run checks. Do not restore the old index while two comparison jobs are active.
+
 ## Verification record
 
 Verified October 7, 2026:

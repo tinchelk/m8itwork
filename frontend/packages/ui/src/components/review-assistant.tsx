@@ -4,6 +4,7 @@ import { API, api, WorkspaceError, type Project } from "./workspace-types";
 import type { Save } from "./workspace-forms";
 import { useFormDraft } from "./workspace-drafts";
 import { readReviewSession, reviewSessionKey, writeReviewSession, type ReviewQueueRequest, type ReviewSession } from "./review-session";
+import { ReviewComparison } from "./review-comparison";
 import { WorkerLogin, type WorkerLoginState } from "./worker-login";
 const displayTime = (value: string) => new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(value));
 export interface ReviewReport {
@@ -12,7 +13,8 @@ export interface ReviewReport {
   scope: string; acceptance: string; assumptions: string; questions: string[];
   effort: { minHours: number; maxHours: number; confidence: string };
 }
-interface ReviewJob {
+export interface ReviewJob {
+  comparisonId?: string | null;
   id: string; provider: string; status: string; commit: string; stale: boolean;
   createdAt: string; errorCode: string | null; result: ReviewReport | null;
   coverage: { readFiles: number; eligibleFiles: number; limitations: string[] } | null;
@@ -28,7 +30,13 @@ async function fetchReviewPage(prefix: string, saved: ReviewSession | null) {
   const active = data.jobs.find(j => ["QUEUED", "RUNNING"].includes(j.status));
   if (saved) {
     let added = false;
-    for (const id of new Set([saved.pending?.id, saved.parentJobId].filter((id): id is string => Boolean(id)))) {
+    if (saved.pending?.provider === "both") {
+      try {
+        const pair = await api<{ jobs: ReviewJob[] }>(`${prefix.replace("review-jobs", "review-comparisons")}/${saved.pending.id}`);
+        data.jobs = [...pair.jobs, ...data.jobs.filter(j => !pair.jobs.some(p => p.id === j.id))]; added = true;
+      } catch (e) { if (!(e instanceof WorkspaceError && e.status === 404)) throw e; }
+    }
+    for (const id of new Set([saved.pending?.provider === "both" ? null : saved.pending?.id, saved.parentJobId].filter((id): id is string => Boolean(id)))) {
       if (!data.jobs.some(j => j.id === id)) {
         try { const older = await api<{ job: ReviewJob }>(`${prefix}/${id}`); data.jobs.push(older.job); added = true; }
         catch (e) { if (!(e instanceof WorkspaceError && e.status === 404)) throw e; }
@@ -46,7 +54,7 @@ function ProviderStatus({ worker, now }: { worker: Worker; now: number }) {
     {worker.providerStatus?.some(p => p.provider === "codex") && <WorkerLogin worker={worker} />}
   </div>;
 }
-const failures: Record<string, string> = {
+export const failures: Record<string, string> = {
   QUOTA: "Subscription limit reached. The worker pauses this provider for 30 minutes. Retry after its allowance resets.",
   AUTH: "Sign the local worker back in to its subscription, then retry.",
   CONNECTION: "Ask the customer to reconnect GitHub in their dashboard, then retry.",
@@ -62,8 +70,11 @@ export function reviewText(r: ReviewReport) {
 export function ReviewAssistant({ accountId, project, save, busy, onApply }: { accountId: string; project: Project; save: Save; busy: boolean; onApply: (report: ReviewReport, target: "review" | "proposal") => void }) {
   const [jobs, setJobs] = useState<ReviewJob[]>([]), [online, setOnline] = useState(0);
   const [active, setActive] = useState<ReviewJob | undefined>();
+  const [selectedComparisonId, setSelectedComparisonId] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-  const [error, setError] = useState(""), [working, setWorking] = useState(false), [loading, setLoading] = useState(true);
+  const [error, setError] = useState(""), [working, setWorking] = useState(false), [statusLoading, setLoading] = useState(true);
+  const [statusVersion, setStatusVersion] = useState<number | null>(null), [comparisonRefresh, setComparisonRefresh] = useState(0);
+  const loading = statusLoading || statusVersion !== project.version;
   const [provider, setProvider] = useState("codex"), [rate, setRate] = useState(0), [buffer, setBuffer] = useState(20), [hours, setHours] = useState(6), [currency, setCurrency] = useState("USD");
   const queueId = useRef<string | null>(null);
   const [pendingQueue, setPendingQueue] = useState(false);
@@ -76,6 +87,7 @@ export function ReviewAssistant({ accountId, project, save, busy, onApply }: { a
   const reportRef = useRef<HTMLHeadingElement>(null), reportDisclosure = useRef<HTMLDetailsElement>(null), openRequested = useRef(false);
   const clearDraft = draft.clear;
   const acknowledgeQueue = useCallback(() => {
+    if (pendingBody.current?.provider === "both") setSelectedComparisonId(pendingBody.current.id);
     const confirmedProvider = pendingBody.current?.provider ?? "codex";
     writeReviewSession(sessionKey, { provider: confirmedProvider, parentJobId: null, pending: null });
     queueId.current = null; pendingBody.current = null; setPendingQueue(false);
@@ -96,7 +108,7 @@ export function ReviewAssistant({ accountId, project, save, busy, onApply }: { a
             if (saved) { setProvider(saved.provider); setParentJobId(saved.parentJobId); pendingBody.current = saved.pending; queueId.current = saved.pending?.id ?? null; setPendingQueue(Boolean(saved.pending)); }
         }
         const { data, active } = await fetchReviewPage(prefix, readReviewSession(sessionKey));
-        if (!ignore) { setActive(active); setJobs(current => [...data.jobs, ...current.filter(j => !data.jobs.some(fresh => fresh.id === j.id))]); setOnline(data.onlineWorkers); setWorkers(data.workers ?? []); setStatusNow(Date.now()); setEvidenceDigest(data.evidenceDigest ?? ""); setNextCursor(data.nextCursor ?? null); if (queueId.current && data.jobs.some(j => j.id === queueId.current)) { acknowledgeQueue(); } setError(""); setLoading(false); }
+        if (!ignore) { setActive(active); setJobs(current => [...data.jobs, ...current.filter(j => !data.jobs.some(fresh => fresh.id === j.id))]); setOnline(data.onlineWorkers); setWorkers(data.workers ?? []); setStatusNow(Date.now()); setEvidenceDigest(data.evidenceDigest ?? ""); setNextCursor(data.nextCursor ?? null); if (queueId.current && data.jobs.some(j => j.id === queueId.current || j.comparisonId === queueId.current)) { acknowledgeQueue(); } setError(""); setStatusVersion(project.version); setLoading(false); }
       }
       catch (e) { if (!ignore) { setError((e as Error).message); setLoading(true); } }
     }
@@ -107,10 +119,18 @@ export function ReviewAssistant({ accountId, project, save, busy, onApply }: { a
     if (!openRequested.current || !reportRef.current) return;
     openRequested.current = false; if (reportDisclosure.current) reportDisclosure.current.open = true; reportRef.current.focus(); reportRef.current.scrollIntoView({ block: "start", behavior: "instant" });
   }, [selectedJobId]);
-  async function reload() { const { data, active } = await fetchReviewPage(prefix, readReviewSession(sessionKey)); setActive(active); setJobs(current => [...data.jobs, ...current.filter(j => !data.jobs.some(fresh => fresh.id === j.id))]); setOnline(data.onlineWorkers); setWorkers(data.workers ?? []); setStatusNow(Date.now()); setEvidenceDigest(data.evidenceDigest ?? ""); setNextCursor(data.nextCursor ?? null); if (queueId.current && data.jobs.some(j => j.id === queueId.current)) { acknowledgeQueue(); } setError(""); setLoading(false); }
+  async function reload() { setComparisonRefresh(n => n + 1); const { data, active } = await fetchReviewPage(prefix, readReviewSession(sessionKey)); setActive(active); setJobs(current => [...data.jobs, ...current.filter(j => !data.jobs.some(fresh => fresh.id === j.id))]); setOnline(data.onlineWorkers); setWorkers(data.workers ?? []); setStatusNow(Date.now()); setEvidenceDigest(data.evidenceDigest ?? ""); setNextCursor(data.nextCursor ?? null); if (queueId.current && data.jobs.some(j => j.id === queueId.current || j.comparisonId === queueId.current)) { acknowledgeQueue(); } setError(""); setStatusVersion(project.version); setLoading(false); }
   const history = jobs.map(j => ({ ...j, stale: j.stale || Boolean(evidenceDigest && j.inputDigest && j.inputDigest !== evidenceDigest) }));
-  const latest = history[0], shown = history.find(j => j.id === selectedJobId) ?? latest, report = shown?.result;
+  const latest = history[0], shown = history.find(j => j.id === selectedJobId) ?? latest, report = shown?.status === "SUCCEEDED" ? shown.result : null;
   const followUp = history.find(j => j.id === parentJobId), staleFollowUp = Boolean(parentJobId && (!followUp || followUp.stale));
+  const comparisons = history.filter((j, i, all) => j.comparisonId && all.findIndex(p => p.comparisonId === j.comparisonId) === i);
+  const comparisonId = selectedComparisonId ?? comparisons[0]?.comparisonId;
+  function continueFrom(job: ReviewJob, destination: string) {
+    setJobs(current => current.some(j => j.id === job.id) ? current.map(j => j.id === job.id ? job : j) : [...current, job]);
+    setParentJobId(job.id); setProvider(destination);
+    writeReviewSession(sessionKey, { provider: destination, parentJobId: job.id, pending: null });
+    questionRef.current?.focus(); questionRef.current?.scrollIntoView({ block: "center", behavior: "instant" });
+  }
   const multiplier = 1 + buffer / 100;
   const cost = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 0 }).format(n * rate * multiplier);
   return <div className="review-assistant">
@@ -122,23 +142,35 @@ export function ReviewAssistant({ accountId, project, save, busy, onApply }: { a
       e.preventDefault(); setWorking(true); setError(""); draft.capture(); queueId.current ??= crypto.randomUUID(); setPendingQueue(true);
       pendingBody.current ??= { id: queueId.current, version: project.version, provider, instructions: questionRef.current?.value.trim() ?? "", ...(parentJobId ? { parentJobId } : {}) };
       writeReviewSession(sessionKey, { provider, parentJobId, pending: pendingBody.current });
-      try { if (await save(prefix, pendingBody.current, "Review queued. Results will stay private until you publish.", reason => { if (reason instanceof WorkspaceError && [400, 409, 413, 422].includes(reason.status)) { queueId.current = null; pendingBody.current = null; setPendingQueue(false); writeReviewSession(sessionKey, { provider, parentJobId, pending: null }); } })) { acknowledgeQueue(); await reload(); } }
+      try { if (await save(pendingBody.current.provider === "both" ? prefix.replace("review-jobs", "review-comparisons") : prefix, pendingBody.current, provider === "both" ? "Comparison queued. Both replies stay private until you publish." : "Review queued. Results will stay private until you publish.", reason => { if (reason instanceof WorkspaceError && [400, 409, 413, 422].includes(reason.status)) { queueId.current = null; pendingBody.current = null; setPendingQueue(false); writeReviewSession(sessionKey, { provider, parentJobId, pending: null }); } })) { acknowledgeQueue(); await reload(); } }
       catch (e) { setError((e as Error).message); } finally { setWorking(false); }
     }}>
     <label className="agent-question">Follow-up question or review instructions{parentJobId ? "" : " (optional)"}<textarea ref={questionRef} name="instructions" maxLength={3000} required={Boolean(parentJobId)} disabled={loading || busy || working || Boolean(active) || pendingQueue} rows={3} placeholder="What should the agent investigate or clarify? Leave out credentials." /></label>
     {parentJobId && <p className="portal-notice">Continuing from the selected reply at {followUp ? displayTime(followUp.createdAt) : "an earlier review"}. {loading ? "Restoring the saved conversation. Retry status if it is unavailable." : staleFollowUp ? "The evidence changed. Start a fresh review." : "The latest three reply summaries are carried into the next turn."} <button type="button" className="portal-plain" disabled={working || pendingQueue} onClick={() => { setParentJobId(null); writeReviewSession(sessionKey, { provider, parentJobId: null, pending: null }); }}>Start a fresh review</button></p>}
     <div className="review-controls">
-      <label>Coding agent<select value={provider} onChange={e => { setProvider(e.target.value); writeReviewSession(sessionKey, { provider: e.target.value, parentJobId, pending: pendingBody.current }); }} disabled={busy || working || Boolean(active) || pendingQueue}><option value="codex">Codex subscription</option><option value="claude">Claude Code subscription</option></select></label>
-      <button className="button" disabled={loading || busy || working || Boolean(active) || (staleFollowUp && !pendingQueue) || !project.aiReviewConsentAt || !project.repositoryUrl}>{working ? "Saving…" : pendingQueue ? "Retry queue request" : active ? "Review in progress" : parentJobId ? "Send follow-up" : latest ? "Run a fresh review" : "Queue review"}</button>
+      <label>Coding agent<select value={provider} onChange={e => { setProvider(e.target.value); if (e.target.value === "both") setParentJobId(null); writeReviewSession(sessionKey, { provider: e.target.value, parentJobId: e.target.value === "both" ? null : parentJobId, pending: pendingBody.current }); }} disabled={busy || working || Boolean(active) || pendingQueue}><option value="codex">Codex subscription</option><option value="claude">Claude Code subscription</option><option value="both">Codex + Claude · compare</option></select></label>
+      <button className="button" disabled={loading || busy || working || Boolean(active) || (staleFollowUp && !pendingQueue) || !project.aiReviewConsentAt || !project.repositoryUrl}>{working ? "Saving…" : pendingQueue ? "Retry queue request" : active ? "Review in progress" : provider === "both" ? "Compare proposals" : parentJobId ? "Send follow-up" : latest ? "Run a fresh review" : "Queue review"}</button>
     </div>
     </form>
+    {provider === "both" && <p className="portal-notice">Both agents receive the same saved commit, customer request and your instructions independently, with no earlier replies. One worker runs them in sequence; each provider needs its own subscription login.</p>}
     <p className="portal-muted">{loading ? "Loading review status…" : online ? `${online} worker${online === 1 ? "" : "s"} online. The selected provider must be enabled on a worker.` : "Worker offline. Queued reviews wait until your machine reconnects. Open Worker setup on the project overview to pair it."}</p>
     {workers.length > 0 && <details className="review-provider-panel" open={workers.some(w => w.providerStatus?.some(p => ["NEEDS_LOGIN", "LIMITED", "ERROR"].includes(p.state)))}><summary>Provider readiness</summary>{workers.map(w => <div key={w.id}><strong>{w.name}</strong><ProviderStatus worker={w} now={statusNow} /></div>)}</details>}
     {error && <p role="alert" className="portal-error">{error} <button className="portal-plain" onClick={() => void reload().catch(e => setError((e as Error).message))}>Try again</button></p>}
     {latest && <div role="status" className="review-job-status"><strong>{({ QUEUED: "Queued", RUNNING: "Reviewing source", SUCCEEDED: "Draft ready", FAILED: "Review stopped", CANCELLED: "Review cancelled" } as Record<string, string>)[latest.status]}</strong><span>{latest.provider} · commit {latest.commit.slice(0, 7)} · {displayTime(latest.createdAt)}</span></div>}
     {active && history.find(j => j.id === active.id)?.stale && <p className="portal-notice">Requests or repository evidence changed. This reply would be out of date. Cancel the review; the worker also stops stale follow-ups when it next checks access.</p>}
-    {active && <button className="portal-plain" disabled={working} onClick={async () => { setWorking(true); try { await api(`${prefix}/${active.id}/cancel`, {}); await reload(); } catch (e) { setError((e as Error).message); } finally { setWorking(false); } }}>Cancel review</button>}
+    {active && <button className="portal-plain" disabled={working} onClick={async () => { setWorking(true); try { await api(active.comparisonId ? `${prefix.replace("review-jobs", "review-comparisons")}/${active.comparisonId}/cancel` : `${prefix}/${active.id}/cancel`, {}); await reload(); } catch (e) { setError((e as Error).message); } finally { setWorking(false); } }}>{active.comparisonId ? "Cancel unfinished comparison" : "Cancel review"}</button>}
     {latest?.errorCode && <p className="portal-notice">{failures[latest.errorCode] ?? "Check the worker and retry, or review manually."}</p>}
+    {(report || comparisonId) && <>      <details className="review-calculator"><summary>Plan cost & working time</summary>
+        <div className="portal-form-row"><label>Your hourly rate<input type="number" min="0" max="10000" value={rate} onChange={e => setRate(Math.max(0, Math.min(10000, Number(e.target.value))))} /></label><label>Currency<select value={currency} onChange={e => setCurrency(e.target.value)}>{["USD", "GBP", "EUR", "AUD", "CAD"].map(c => <option key={c}>{c}</option>)}</select></label></div>
+        <div className="portal-form-row"><label>Uncertainty buffer (%)<input type="number" min="0" max="100" value={buffer} onChange={e => setBuffer(Math.max(0, Math.min(100, Number(e.target.value))))} /></label><label>Available hours per working day<input type="number" min="1" max="12" value={hours} onChange={e => setHours(Math.max(1, Math.min(12, Number(e.target.value))))} /></label></div>
+        {report && !comparisonId && <p>{rate ? `${cost(report.effort.minHours)}–${cost(report.effort.maxHours)}` : "Enter your rate for a cost range"} · {Math.ceil(report.effort.minHours * multiplier / hours)}–{Math.ceil(report.effort.maxHours * multiplier / hours)} working days including buffer.</p>}
+        <p className="portal-muted">Planning range only. Choose the final price and calendar date in your proposal.</p>
+      </details>
+    </>}
+    {comparisonId && <>
+      {comparisons.length > 1 && <label className="review-history">Comparison history<select value={comparisonId} onChange={e => setSelectedComparisonId(e.target.value)}>{comparisons.map(j => <option key={j.comparisonId} value={j.comparisonId!}>{displayTime(j.createdAt)} · commit {j.commit.slice(0, 7)}</option>)}</select></label>}
+      <ReviewComparison key={comparisonId} url={`${prefix.replace("review-jobs", "review-comparisons")}/${comparisonId}`} refresh={comparisonRefresh} evidenceDigest={evidenceDigest} unavailable={loading || busy || working || pendingQueue} active={Boolean(active)} workers={workers} now={statusNow} rate={rate} buffer={buffer} hours={hours} currency={currency} onApply={onApply} onContinue={continueFrom} />
+    </>}
     {history.length > 1 && <label className="review-history">Review history<select value={shown?.id ?? ""} onChange={e => setSelectedJobId(e.target.value)}>{history.map(j => <option key={j.id} value={j.id}>{displayTime(j.createdAt)} · {j.provider} · {j.status.toLowerCase()} · {j.commit.slice(0, 7)}</option>)}</select></label>}
     {shown && <details className="review-activity" open={shown.status === "RUNNING"}><summary>Activity for selected review</summary>{shown.activity?.length ? <ol>{shown.activity.map(e => <li key={e.id}><strong>{e.kind === "MESSAGE" ? "Agent message" : e.kind.toLowerCase()}</strong><time dateTime={e.at}>{displayTime(e.at)}</time><p className="portal-preserve">{e.text}</p></li>)}</ol> : <p className="portal-muted">Activity will appear when the current Docker worker starts this review. Earlier workers did not report activity.</p>}{Boolean(shown.activityOmitted) && <p className="portal-muted">{shown.activityOmitted} older activity entries omitted. The saved prompt and validated reply remain in the conversation.</p>}</details>}
     {history.length > 0 && <details className="agent-conversation" open><summary>Private agent conversation</summary><p className="portal-muted">Saved prompts, validated replies and decision summaries. Each turn uses a fresh read-only source sample. Visible activity is bounded; credentials and internal reasoning are excluded.</p><ol>{[...history].reverse().map(j => <li key={j.id}><p className="portal-muted">{displayTime(j.createdAt)} · {j.provider} · {j.status.toLowerCase()} · commit {j.commit.slice(0, 7)}</p><strong>You</strong><p className="portal-preserve">{j.instructions || "Review the customer’s request and recommend scope and effort."}</p><strong>Agent reply</strong><p className="portal-preserve">{j.result?.summary ?? (j.errorCode ? failures[j.errorCode] ?? "Review stopped." : j.status === "CANCELLED" ? "Review cancelled." : "Waiting for the worker’s reply.")}</p>{j.result && <button className="portal-plain" onClick={() => { if (selectedJobId === j.id) { if (reportDisclosure.current) reportDisclosure.current.open = true; reportRef.current?.focus(); reportRef.current?.scrollIntoView({ block: "start", behavior: "instant" }); } else { openRequested.current = true; setSelectedJobId(j.id); } }}>Open full reply from {displayTime(j.createdAt)}</button>}</li>)}</ol></details>}
@@ -156,13 +188,7 @@ export function ReviewAssistant({ accountId, project, save, busy, onApply }: { a
         <p><strong>{report.effort.minHours}–{report.effort.maxHours} engineering hours</strong> · {report.effort.confidence} confidence</p>
         <p className="portal-muted">{shown!.coverage?.readFiles} files sampled of {shown!.coverage?.eligibleFiles} eligible. {shown!.coverage?.limitations.join(" ")}</p>
       </details>
-      <details className="review-calculator"><summary>Plan cost & working time</summary>
-        <div className="portal-form-row"><label>Your hourly rate<input type="number" min="0" max="10000" value={rate} onChange={e => setRate(Math.max(0, Math.min(10000, Number(e.target.value))))} /></label><label>Currency<select value={currency} onChange={e => setCurrency(e.target.value)}>{["USD", "GBP", "EUR", "AUD", "CAD"].map(c => <option key={c}>{c}</option>)}</select></label></div>
-        <div className="portal-form-row"><label>Uncertainty buffer (%)<input type="number" min="0" max="100" value={buffer} onChange={e => setBuffer(Math.max(0, Math.min(100, Number(e.target.value))))} /></label><label>Available hours per working day<input type="number" min="1" max="12" value={hours} onChange={e => setHours(Math.max(1, Math.min(12, Number(e.target.value))))} /></label></div>
-        <p>{rate ? `${cost(report.effort.minHours)}–${cost(report.effort.maxHours)}` : "Enter your rate for a cost range"} · {Math.ceil(report.effort.minHours * multiplier / hours)}–{Math.ceil(report.effort.maxHours * multiplier / hours)} working days including buffer.</p>
-        <p className="portal-muted">Planning range only. Choose the final price and calendar date in your proposal.</p>
-      </details>
-      <div className="review-controls"><button className="button outline" disabled={busy || shown!.stale || Boolean(active) || pendingQueue} onClick={() => { setParentJobId(shown!.id); writeReviewSession(sessionKey, { provider, parentJobId: shown!.id, pending: null }); questionRef.current?.focus(); }}>Ask a follow-up</button><button className="button outline" disabled={busy || shown!.stale} onClick={() => onApply(report, "review")}>Add to review draft</button><button className="button outline" disabled={busy || shown!.stale} onClick={() => onApply(report, "proposal")}>Add to scope draft</button></div>
+      <div className="review-controls"><button className="button outline" disabled={loading || busy || shown!.stale || Boolean(active) || pendingQueue} onClick={() => continueFrom(shown!, provider === "both" ? shown!.provider : provider)}>Ask a follow-up</button><button className="button outline" disabled={loading || busy || shown!.stale || Boolean(active) || pendingQueue} onClick={() => continueFrom(shown!, shown!.provider === "codex" ? "claude" : "codex")}>Continue with {shown!.provider === "codex" ? "Claude" : "Codex"}</button><button className="button outline" disabled={loading || busy || shown!.stale} onClick={() => onApply(report, "review")}>Add to review draft</button><button className="button outline" disabled={loading || busy || shown!.stale} onClick={() => onApply(report, "proposal")}>Add to scope draft</button></div>
       <p className="portal-muted">Adds to your editable form below. Nothing is sent to the customer until you publish.</p>
     </>}
   </div>;

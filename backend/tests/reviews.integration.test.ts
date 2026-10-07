@@ -60,7 +60,7 @@ describe.skipIf(!dbUrl)("private local review queue", () => {
     expect((await workerPost("/claim", w.token, { attemptId: randomUUID(), providers: ["codex"] })).json().job).toBeNull();
     const context = await workerPost(`/jobs/${id}/context`, w.token, { attemptId }); expect(context.statusCode).toBe(200); expect(context.body).not.toContain("fixture-customer-access"); expect(context.json().source.files).toHaveLength(1);
     expect((await workerPost(`/jobs/${id}/complete`, w.token, { attemptId, report: { ...report, findings: [{ ...report.findings[0], evidence: ["imaginary.ts"] }] } })).statusCode).toBe(400);
-    const results = await Promise.all([1, 2].map(() => workerPost(`/jobs/${id}/complete`, w.token, { attemptId, report }))); expect(results.map(r => r.statusCode)).toEqual([200, 200]);
+    const results = await Promise.all([1, 2].map(() => workerPost(`/jobs/${id}/complete`, w.token, { attemptId, report }))); expect(results.map(r => r.statusCode), results.map(r => r.body).join("\n")).toEqual([200, 200]);
     const customerView = await app.inject({ url: `/v1/projects/${p.id}`, headers: { cookie: customer.cookie } }); expect(customerView.body).not.toContain("Authentication always returns false"); expect(customerView.body).not.toContain("reviewJobs");
     expect((await app.inject({ url: `/v1/operator/projects/${p.id}/review-jobs`, headers: { cookie: customer.cookie } })).statusCode).toBe(403);
     expect(await prisma.project.findUnique({ where: { id: p.id } }).then(r => r?.reviewSummary)).toBeNull();
@@ -249,6 +249,88 @@ describe.skipIf(!dbUrl)("private local review queue", () => {
     const record = await prisma.reviewWorker.findUniqueOrThrow({ where: { id: w.worker.id } });
     expect(record.remoteLogin).toBe(false); expect((record.loginRequest as { status: string }).status).toBe("CANCELLED");
     expect((await post(route, operator.cookie, { requestId: randomUUID() })).json().error.code).toBe("WORKER_UPGRADE");
+  });
+
+  it("queues an atomic independent pair, retries once, scopes history and cancels only unfinished work", async () => {
+    const p = await project(), other = await project(), comparisonId = randomUUID();
+    const url = `/v1/operator/projects/${p.id}/review-comparisons`;
+    const body = { id: comparisonId, version: 1, provider: "both", instructions: "Compare the smallest launch scope." };
+    expect((await post(url, customer.cookie, body)).statusCode).toBe(403);
+    const results = await Promise.all([1, 2].map(() => post(url, operator.cookie, body)));
+    expect(results.map(r => r.statusCode)).toEqual([200, 200]);
+    expect(results[0]!.json()).toEqual(results[1]!.json());
+    const jobs = await prisma.reviewJob.findMany({ where: { comparisonId }, orderBy: { provider: "asc" } });
+    expect(jobs.map(j => j.provider)).toEqual(["claude", "codex"]);
+    expect(jobs.every(j => j.commit === "a".repeat(40) && j.parentJobId === null && JSON.stringify(j.previousTurns) === "[]")).toBe(true);
+    expect(jobs[0]!.inputDigest).toBe(jobs[1]!.inputDigest); expect(jobs[0]!.requestSnapshot).toEqual(jobs[1]!.requestSnapshot);
+    expect((await prisma.project.findUniqueOrThrow({ where: { id: p.id } })).version).toBe(2);
+    expect((await post(url, operator.cookie, { ...body, instructions: "Different instructions" })).statusCode).toBe(409);
+    expect((await post(`/v1/operator/projects/${other.id}/review-comparisons`, operator.cookie, body)).statusCode).toBe(409);
+    expect((await post(url, operator.cookie, { ...body, id: randomUUID(), version: 2 })).json().error.code).toBe("REVIEW_ACTIVE");
+    expect((await post(`/v1/operator/projects/${p.id}/review-jobs`, operator.cookie, { id: randomUUID(), version: 2, provider: "codex" })).json().error.code).toBe("REVIEW_ACTIVE");
+    const get = (path: string, cookie = operator.cookie) => app.inject({ url: path, headers: { cookie } });
+    expect((await get(`${url}/${comparisonId}`, customer.cookie)).statusCode).toBe(403);
+    expect((await get(`/v1/operator/projects/${other.id}/review-comparisons/${comparisonId}`)).statusCode).toBe(404);
+    expect((await post(`/v1/operator/projects/${other.id}/review-comparisons/${comparisonId}/cancel`, operator.cookie, {})).statusCode).toBe(404);
+    await prisma.reviewJob.createMany({ data: Array.from({ length: 12 }, () => ({ id: randomUUID(), projectId: p.id, provider: "codex", status: "FAILED" as const, commit: jobs[0]!.commit, repositoryUrl: p.repositoryUrl!, inputDigest: jobs[0]!.inputDigest, requestSnapshot: {} })) });
+    expect((await get(`${url}/${comparisonId}`)).json().jobs).toHaveLength(2);
+    const codex = jobs.find(j => j.provider === "codex")!;
+    await prisma.reviewJob.update({ where: { id: codex.id }, data: { status: "SUCCEEDED", result: report } });
+    await post(`${url}/${comparisonId}/cancel`, operator.cookie, {});
+    const cancelled = (await get(`${url}/${comparisonId}`)).json<{ jobs: { provider: string; status: string; result: unknown }[] }>().jobs;
+    expect(cancelled.find(j => j.provider === "claude")!.status).toBe("CANCELLED");
+    expect(cancelled.find(j => j.provider === "codex")!.result).toEqual(report);
+    const publicView = await get(`/v1/projects/${p.id}`, customer.cookie);
+    expect(publicView.body).not.toContain(comparisonId); expect(publicView.body).not.toContain(report.scope);
+    await prisma.projectRequest.create({ data: { projectId: p.id, kind: "FEATURE", title: "Extra scope", detail: "Add payment support." } });
+    expect((await get(`${url}/${comparisonId}`)).json<{ jobs: { stale: boolean }[] }>().jobs.every(j => j.stale)).toBe(true);
+  });
+  it("keeps pair contexts independent and allows both validated handoff directions with the unchanged worker protocol", async () => {
+    const p = await project(), w = await pair(), comparisonId = randomUUID();
+    await prisma.reviewSession.update({ where: { id: connections[0]! }, data: { tokenEncrypted: encrypt("fixture-customer-access", env.TOKEN_ENCRYPTION_KEY) } });
+    await prisma.reviewJob.updateMany({ where: { project: { accountId: customer.id }, status: { in: ["QUEUED", "RUNNING"] } }, data: { status: "CANCELLED", leaseExpiresAt: null } });
+    expect((await post(`/v1/operator/projects/${p.id}/review-comparisons`, operator.cookie, { id: comparisonId, version: 1, provider: "both", instructions: "Inspect identity and estimate scope." })).statusCode).toBe(200);
+    const contexts: unknown[] = [];
+    const completed: Record<string, string> = {};
+    for (const provider of ["codex", "claude"]) {
+      const attemptId = randomUUID();
+      const claim = await workerPost("/claim", w.token, { attemptId, providers: [provider] });
+      const id = claim.json().job.id; completed[provider] = id;
+      const context = await workerPost(`/jobs/${id}/context`, w.token, { attemptId });
+      expect(context.statusCode).toBe(200); expect(context.json().discussion.previous).toEqual([]); contexts.push(context.json());
+      expect((await workerPost(`/jobs/${id}/complete`, w.token, { attemptId, report: { ...report, summary: `${provider} independent proposal.` } })).statusCode).toBe(200);
+    }
+    expect(contexts[0]).toEqual(contexts[1]);
+    let version = 2;
+    for (const [source, destination] of [["codex", "claude"], ["claude", "codex"]] as const) {
+      const id = randomUUID();
+      expect((await post(`/v1/operator/projects/${p.id}/review-jobs`, operator.cookie, { id, version: version++, provider: destination, parentJobId: completed[source], instructions: "Challenge this proposal's assumptions." })).statusCode).toBe(200);
+      const attemptId = randomUUID();
+      expect((await workerPost("/claim", w.token, { attemptId, providers: [destination] })).json().job.id).toBe(id);
+      const context = await workerPost(`/jobs/${id}/context`, w.token, { attemptId });
+      expect(context.json().discussion.previous[0].summary).toBe(`${source} independent proposal.`);
+      expect((await workerPost(`/jobs/${id}/complete`, w.token, { attemptId, report })).statusCode).toBe(200);
+    }
+    const foreign = await project();
+    expect((await post(`/v1/operator/projects/${foreign.id}/review-jobs`, operator.cookie, { id: randomUUID(), version: 1, provider: "claude", parentJobId: completed.codex })).json().error.code).toBe("STALE_CONVERSATION");
+  });
+  it("fences changed inputs and withdrawn consent for every comparison member", async () => {
+    const p = await project(), w = await pair(), comparisonId = randomUUID();
+    const url = `/v1/operator/projects/${p.id}/review-comparisons`;
+    await post(url, operator.cookie, { id: comparisonId, version: 1, provider: "both" });
+    const attemptId = randomUUID(), claim = await workerPost("/claim", w.token, { attemptId, providers: ["codex"] }), id = claim.json().job.id;
+    expect((await workerPost(`/jobs/${id}/context`, w.token, { attemptId })).statusCode).toBe(200);
+    await prisma.projectRequest.create({ data: { projectId: p.id, kind: "FEATURE", title: "Changed", detail: "More scope." } });
+    expect((await workerPost(`/jobs/${id}/heartbeat`, w.token, { attemptId })).statusCode).toBe(409);
+    expect((await workerPost(`/jobs/${id}/complete`, w.token, { attemptId, report })).statusCode).toBe(409);
+    expect((await workerPost("/claim", (await pair()).token, { attemptId: randomUUID(), providers: ["claude"] })).json().job).toBeNull();
+    expect((await post(`/v1/projects/${p.id}/ai-review-consent`, customer.cookie, { version: 2, policy: "ai-review-v1", consent: false })).statusCode).toBe(200);
+    expect((await prisma.reviewJob.findMany({ where: { comparisonId } })).every(j => j.status === "CANCELLED")).toBe(true);
+    const noConsent = await project(false);
+    expect((await post(`/v1/operator/projects/${noConsent.id}/review-comparisons`, operator.cookie, { id: randomUUID(), version: 1, provider: "both" })).json().error.code).toBe("AI_CONSENT_REQUIRED");
+    const stale = await project();
+    expect((await post(`/v1/operator/projects/${stale.id}/review-comparisons`, operator.cookie, { id: randomUUID(), version: 9, provider: "both" })).statusCode).toBe(409);
+    expect(await prisma.reviewJob.count({ where: { projectId: stale.id } })).toBe(0);
   });
 
 });

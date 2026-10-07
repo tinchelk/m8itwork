@@ -1,4 +1,5 @@
-import { Prisma, type PrismaClient, type ReviewWorker } from "@prisma/client";
+import { randomUUID } from "node:crypto";
+import { Prisma, type PrismaClient, type ReviewWorker, type ReviewJob } from "@prisma/client";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { isOperator } from "../accounts.js";
@@ -21,6 +22,9 @@ async function snapshot(tx: Prisma.TransactionClient, id: string): Promise<Reque
 }
 function bounded(input: RequestSnapshot): RequestSnapshot {
   return { summary: input.summary, requests: input.requests.slice(0, 20).map(r => ({ ...r, detail: r.detail.slice(0, 2000) })) };
+}
+function jobView(job: ReviewJob, digest: string) {
+  return { id: job.id, comparisonId: job.comparisonId, provider: job.provider, status: job.status, commit: job.commit, createdAt: job.createdAt, completedAt: job.completedAt, errorCode: job.errorCode, result: job.result, coverage: job.coverage, instructions: job.instructions, activity: job.activity, activityOmitted: job.activityOmitted, inputDigest: job.inputDigest, stale: job.inputDigest !== digest };
 }
 const workerSelect = { id: true, name: true, createdAt: true, lastSeenAt: true, revokedAt: true, providerStatus: true, statusAt: true, remoteLogin: true, loginRequest: true } as const;
 export async function pairWorker(prisma: PrismaClient, env: Env, githubId: string, name: string) {
@@ -45,7 +49,7 @@ export async function registerReviews(app: FastifyInstance, { prisma, env, githu
     if (!job || job.status !== "RUNNING" || job.workerId !== workerId || job.attemptId !== attemptId || !job.leaseExpiresAt || job.leaseExpiresAt <= new Date() || !job.startedAt || Date.now() - job.startedAt.getTime() > 10 * 60_000 || job.worker?.revokedAt || !job.worker || !isOperator(job.worker.operator, env) || !job.project.aiReviewConsentAt || job.project.aiReviewConsentVersion !== REVIEW_POLICY) throw leaseLost();
     const inspected = z.object({ commit: z.string() }).passthrough().safeParse(job.project.inspectionReport);
     if (job.project.repositoryUrl !== job.repositoryUrl || !inspected.success || inspected.data.commit !== job.commit) throw leaseLost();
-    if (job.parentJobId && job.inputDigest !== inputDigest(await snapshot(tx, job.projectId), job.repositoryUrl, job.commit)) throw leaseLost();
+    if ((job.parentJobId || job.comparisonId) && job.inputDigest !== inputDigest(await snapshot(tx, job.projectId), job.repositoryUrl, job.commit)) throw leaseLost();
     if (job.sourceSessionId) {
       const connection = await tx.reviewSession.findUnique({ where: { id: job.sourceSessionId } });
       const login = connection?.accountSessionId && await tx.accountSession.findFirst({ where: { id: connection.accountSessionId, accountId: job.project.accountId, expiresAt: { gt: new Date() } } });
@@ -164,7 +168,7 @@ export async function registerReviews(app: FastifyInstance, { prisma, env, githu
     if (cursor && !await prisma.reviewJob.findFirst({ where: { id: cursor, projectId: project.id }, select: { id: true } })) throw new AppError(404, "REVIEW_NOT_FOUND", "This review is not available.");
     const jobs = await prisma.reviewJob.findMany({ where: { projectId: project.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 11, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}) });
     const page = jobs.slice(0, 10);
-    return { jobs: page.map(job => ({ id: job.id, provider: job.provider, status: job.status, commit: job.commit, createdAt: job.createdAt, completedAt: job.completedAt, errorCode: job.errorCode, result: job.result, coverage: job.coverage, instructions: job.instructions, activity: job.activity, activityOmitted: job.activityOmitted, inputDigest: job.inputDigest, stale: job.inputDigest !== digest })), evidenceDigest: digest, nextCursor: jobs.length > 10 ? page.at(-1)!.id : null, onlineWorkers: await prisma.reviewWorker.count({ where: { revokedAt: null, lastSeenAt: { gt: new Date(Date.now() - 60_000) } } }), workers: await workerViews({ revokedAt: null }, true) };
+    return { jobs: page.map(job => jobView(job, digest)), evidenceDigest: digest, nextCursor: jobs.length > 10 ? page.at(-1)!.id : null, onlineWorkers: await prisma.reviewWorker.count({ where: { revokedAt: null, lastSeenAt: { gt: new Date(Date.now() - 60_000) } } }), workers: await workerViews({ revokedAt: null }, true) };
   });
   app.post("/v1/operator/projects/:id/review-jobs", async request => {
     const account = await actor(request, true);
@@ -205,7 +209,55 @@ export async function registerReviews(app: FastifyInstance, { prisma, env, githu
     if (!job) throw new AppError(404, "REVIEW_NOT_FOUND", "This review is not available.");
     const inspection = z.object({ commit: z.string() }).passthrough().safeParse(project.inspectionReport);
     const digest = inputDigest(await snapshot(prisma, project.id), project.repositoryUrl, inspection.success ? inspection.data.commit : null);
-    return { job: { id: job.id, provider: job.provider, status: job.status, commit: job.commit, createdAt: job.createdAt, completedAt: job.completedAt, errorCode: job.errorCode, result: job.result, coverage: job.coverage, instructions: job.instructions, activity: job.activity, activityOmitted: job.activityOmitted, inputDigest: job.inputDigest, stale: job.inputDigest !== digest } };
+    return { job: jobView(job, digest) };
+  });
+  app.post("/v1/operator/projects/:id/review-comparisons", async request => {
+    const account = await actor(request, true);
+    const input = z.object({ id: z.uuid(), version: z.number().int().positive(), provider: z.literal("both"), instructions: z.string().trim().max(3000).default("") }).strict().parse(request.body);
+    const instructions = redactText(input.instructions).slice(0, 3000);
+    return prisma.$transaction(async tx => {
+      await reviewLock(tx);
+      const project = await projectFor(account, projectId(request), true, tx);
+      const existing = await tx.reviewJob.findMany({ where: { comparisonId: input.id }, orderBy: { provider: "asc" } });
+      if (existing.length) {
+        if (existing.length !== 2 || new Set(existing.map(j => j.provider)).size !== 2 || existing.some(j => j.projectId !== project.id || (j.instructions ?? "") !== instructions)) throw new AppError(409, "JOB_CONFLICT", "Start a new comparison request.");
+        return { id: input.id, jobs: existing.map(j => ({ id: j.id, provider: j.provider })) };
+      }
+      if (!project.aiReviewConsentAt || project.aiReviewConsentVersion !== REVIEW_POLICY) throw new AppError(409, "AI_CONSENT_REQUIRED", "The customer must allow AI-assisted review in their dashboard first.");
+      const commit = z.object({ commit: z.string().regex(/^[a-f0-9]{40}$/) }).passthrough().safeParse(project.inspectionReport);
+      if (!project.repositoryUrl || !commit.success) throw new AppError(409, "REPOSITORY_REQUIRED", "Connect and inspect a repository first.");
+      if (await tx.reviewJob.count({ where: { projectId: project.id, status: { in: ["QUEUED", "RUNNING"] } } })) throw new AppError(409, "REVIEW_ACTIVE", "This project already has a queued or running review.");
+      await touch(tx, project, input.version);
+      const full = await snapshot(tx, project.id);
+      const shared = { comparisonId: input.id, projectId: project.id, commit: commit.data.commit, repositoryUrl: project.repositoryUrl, inputDigest: inputDigest(full, project.repositoryUrl, commit.data.commit), requestSnapshot: bounded(full), instructions, previousTurns: [] };
+      const jobs = [];
+      for (const provider of ["claude", "codex"] as const) {
+        const job = await tx.reviewJob.create({ data: { ...shared, id: randomUUID(), provider } });
+        jobs.push({ id: job.id, provider: job.provider });
+      }
+      return { id: input.id, jobs };
+    });
+  });
+  app.get("/v1/operator/projects/:id/review-comparisons/:comparisonId", async request => {
+    const account = await actor(request, true);
+    const project = await projectFor(account, projectId(request), true);
+    const comparisonId = z.object({ comparisonId: z.uuid() }).passthrough().parse(request.params).comparisonId;
+    const jobs = await prisma.reviewJob.findMany({ where: { projectId: project.id, comparisonId }, orderBy: { provider: "asc" } });
+    if (jobs.length !== 2) throw new AppError(404, "REVIEW_NOT_FOUND", "This comparison is not available.");
+    const inspected = z.object({ commit: z.string() }).passthrough().safeParse(project.inspectionReport);
+    const digest = inputDigest(await snapshot(prisma, project.id), project.repositoryUrl, inspected.success ? inspected.data.commit : null);
+    return { id: comparisonId, jobs: jobs.map(job => jobView(job, digest)) };
+  });
+  app.post("/v1/operator/projects/:id/review-comparisons/:comparisonId/cancel", async request => {
+    const account = await actor(request, true);
+    const comparisonId = z.object({ comparisonId: z.uuid() }).passthrough().parse(request.params).comparisonId;
+    return prisma.$transaction(async tx => {
+      await reviewLock(tx);
+      const project = await projectFor(account, projectId(request), true, tx);
+      if (!await tx.reviewJob.count({ where: { projectId: project.id, comparisonId } })) throw new AppError(404, "REVIEW_NOT_FOUND", "This comparison is not available.");
+      await tx.reviewJob.updateMany({ where: { projectId: project.id, comparisonId, status: { in: ["QUEUED", "RUNNING"] } }, data: { status: "CANCELLED", leaseExpiresAt: null, completedAt: new Date() } });
+      return { saved: true };
+    });
   });
   app.post("/v1/review-worker/status", async request => {
     const owner = await worker(request);
@@ -250,7 +302,7 @@ export async function registerReviews(app: FastifyInstance, { prisma, env, githu
       if (await tx.reviewJob.count({ where: { workerId: owner.id, status: "RUNNING" } })) return { job: null };
       const job = await tx.reviewJob.findFirst({ where: { status: "QUEUED", provider: { in: input.providers }, project: { aiReviewConsentAt: { not: null }, aiReviewConsentVersion: REVIEW_POLICY } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
       if (!job) return { job: null };
-      if (job.parentJobId) {
+      if (job.parentJobId || job.comparisonId) {
         const project = await tx.project.findUniqueOrThrow({ where: { id: job.projectId } });
         const inspected = z.object({ commit: z.string() }).passthrough().safeParse(project.inspectionReport);
         if (job.inputDigest !== inputDigest(await snapshot(tx, job.projectId), project.repositoryUrl, inspected.success ? inspected.data.commit : null)) {
