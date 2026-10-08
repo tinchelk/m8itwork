@@ -59,7 +59,40 @@
 .auth-links a, .auth-resend { color: #9adfd4; text-decoration: underline; text-underline-offset: 4px; }
 .auth-providers { display: grid; gap: 12px; margin-top: 24px; }
 .auth-providers:empty { display: none; }
-.auth-social { width: 100%; }
+@font-face {
+  font-family: "Google Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../assets/google-sans-medium.ttf") format("truetype");
+}
+.portal-shell a.auth-social {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px;
+  gap: 10px;
+  background: #fff;
+  color: #1f1f1f;
+  border-color: #747775;
+  box-shadow: none;
+  font-family: "Google Sans", Arial, sans-serif;
+  font-weight: 500;
+}
+.portal-shell a.button.auth-social:not(.outline):hover {
+  background: #f2f2f2;
+  color: #1f1f1f;
+  border-color: #747775;
+  box-shadow: none;
+}
+.portal-shell a.button.auth-social:not(.outline):active { background: #e9eaeb; box-shadow: none; }
+.portal-shell .auth-social .auth-provider-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 20px;
+}
+.auth-provider-icon { flex: 0 0 20px; width: 20px; height: 20px; object-fit: contain; }
 .customer-auth .auth-providers .auth-social { margin: 0; }
 .customer-auth .auth-form .button { margin: 8px 0 0; }
 .customer-auth > p:not(.portal-kicker) { margin-bottom: 0; }

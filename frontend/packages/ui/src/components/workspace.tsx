@@ -48,6 +48,7 @@ import {
   type ProjectListItem,
 } from "./workspace-types";
 import { CustomerAuthPanel } from "./customer-auth";
+import { ProviderIcon } from "./provider-icon";
 import { CustomerNavigation } from "./customer-navigation";
 import { NotificationSettings } from "./notification-settings";
 import {
@@ -667,10 +668,11 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
               </p>
               {auth?.connectEnabled ? (
                 <a
-                  className="button"
+                  className="button auth-social"
                   href={`${API}/v1/github/connect?flow=${admin ? "admin" : "login"}`}
                 >
-                  Continue with GitHub <span aria-hidden="true">↗</span>
+                  <span className="auth-provider-label"><ProviderIcon provider="github" />Continue with GitHub</span>
+                  <span aria-hidden="true">↗</span>
                 </a>
               ) : (
                 <p className="portal-notice">

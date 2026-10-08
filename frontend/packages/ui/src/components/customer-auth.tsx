@@ -9,6 +9,7 @@ import {
 } from "react";
 import { API, api, type Auth } from "./workspace-types";
 import { WorkshopBackdrop } from "./workshop-backdrop";
+import { ProviderIcon } from "./provider-icon";
 import {
   notificationReturnFragment,
   rememberCustomerReturn,
@@ -238,7 +239,8 @@ export function CustomerAuthPanel({
               onClick={rememberCustomerReturn}
               href={`${API}/v1/auth/google/connect?flow=login`}
             >
-              Continue with Google <span aria-hidden="true">↗</span>
+              <span className="auth-provider-label"><ProviderIcon provider="google" />Continue with Google</span>
+              <span aria-hidden="true">↗</span>
             </a>
           )}
           {options?.connectEnabled && (
@@ -247,7 +249,8 @@ export function CustomerAuthPanel({
               onClick={rememberCustomerReturn}
               href={`${API}/v1/github/connect?flow=login`}
             >
-              Continue with GitHub <span aria-hidden="true">↗</span>
+              <span className="auth-provider-label"><ProviderIcon provider="github" />Continue with GitHub</span>
+              <span aria-hidden="true">↗</span>
             </a>
           )}
           </div>

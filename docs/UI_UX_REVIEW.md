@@ -100,3 +100,15 @@ Reviewed application commit `dba9b6710cc303be59fbc5fdc4ab4410bfe04a74` is pushed
 Dashboard, sign-in, Account, Billing, and backoffice return HTTPS 200 with certificate validation. In the authenticated production browser, all three customer pages show the shared navigation with the correct active page and no Backoffice link. Account exposes repository connection settings before any project exists and shows only customer email preferences. The separate authenticated backoffice shows its team notification panel. Production Google and GitHub buttons have matching computed dimensions, color, and radius. Routine GitHub sign-in using the existing grant successfully returns to Billing when started there; the browser was then returned to the customer dashboard and separate backoffice.
 
 Production captures are retained only in ignored `backend/var/ux-cleanup-{dashboard,sign-in,backoffice}-production.png`. The production browser remained at its normal desktop size; mobile evidence comes from the automated rendered journeys. No project, message, notification preference, card, payment, repository authorization, or account-closure mutation was submitted for rollout verification. Existing provider and operating acceptance dependencies remain open.
+
+## Provider icon follow-up
+
+Outcome: make Google and GitHub immediately recognizable on customer sign-in/signup and the backoffice sign-in button. Use locally bundled provider marks beside the existing visible labels, equal-size light buttons, and decorative icons that add no keyboard stop or duplicate accessible name. Keep authentication endpoints and validated return flows unchanged. The broader findings above remain outside this small visual follow-up.
+
+Acceptance and verification: both marks render clearly without distortion on desktop/mobile; matching provider dimensions, focus order, readable labels, and touch targets remain intact; bundled assets load without contacting either provider. Check the existing sign-in browser scenarios, frontend lint/types/builds, rendered previews, independent engineering/product/design reviews, and production rollout.
+
+Asset references: [Google sign-in branding](https://developers.google.com/identity/branding-guidelines) and [GitHub brand toolkit](https://brand.github.com/foundations/logo). The Google G is the downloaded standard color mark; the GitHub Invertocat path is from its downloadable black SVG. Light backgrounds preserve the Google mark's colors and equal prominence.
+
+Independent Staff Engineer, Product Owner, and Designer reviews passed for this follow-up with no scoped findings deferred. Lint, both type checks and production builds passed. All ten existing desktop/mobile provider appearance, focus, return, and backoffice sign-in checks passed without retries. Reviewers inspected current source and rendered previews rather than initiating live provider actions.
+
+After the final active-state CSS adjustment, both focused desktop/mobile appearance checks and both production builds passed again. Existing generated Next environment files remain unchanged.
