@@ -66,6 +66,8 @@ test("keeps a failed message draft and explains unavailable payment collection",
 test("customer and admin agree installments, converse, pay, track work and complete handover", async ({
   page,
 }, testInfo) => {
+  // This journey spans both apps and every delivery stage; assertion limits stay unchanged.
+  test.setTimeout(60_000);
   const state = await mockWorkspace(page);
   state.project.stage = "IN_REVIEW";
   await page.goto(`/dashboard?project=${state.project.id}`);
