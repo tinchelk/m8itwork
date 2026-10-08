@@ -15,6 +15,7 @@ import {
 import { notificationReturnFragment } from "./customer-return";
 import { clearAccountDrafts } from "./workspace-drafts";
 import { WorkshopBackdrop } from "./workshop-backdrop";
+import { CustomerNavigation } from "./customer-navigation";
 
 function subscribeHash(callback: () => void) {
   window.addEventListener("hashchange", callback);
@@ -126,42 +127,8 @@ export function CustomerPage({
           <span className="logo-dot">.</span>
         </a>
         <span className="portal-header-label">CUSTOMER DASHBOARD</span>
-        <nav aria-label="Customer navigation">
-          <a className="portal-account-link" href="/dashboard">
-            Dashboard
-          </a>
-          {account ? (
-            <>
-              <a
-                className="portal-account-link"
-                href="/billing"
-                aria-current={current === "billing" ? "page" : undefined}
-              >
-                Billing
-              </a>
-              <a
-                className="portal-account-link"
-                href="/account"
-                aria-current={current === "account" ? "page" : undefined}
-              >
-                Account
-              </a>
-              <span className="portal-user">
-                {account.displayName || account.githubLogin || "Your account"}
-              </span>
-              <button className="portal-plain" onClick={logout} disabled={busy}>
-                {busy ? "Signing out…" : "Sign out"}
-              </button>
-            </>
-          ) : (
-            <a
-              className="portal-account-link"
-              href={`/login?return=${current}${current === "account" ? contact : ""}`}
-            >
-              Sign in
-            </a>
-          )}
-        </nav>
+        <CustomerNavigation current={current} account={account} busy={busy} signingOut={busy} logout={logout}
+          signInHref={`/login?return=${current}${current === "account" ? contact : ""}`} />
       </header>
       <main id="customer-main" className="customer-page">
         {account && error && (

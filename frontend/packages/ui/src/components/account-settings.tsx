@@ -4,6 +4,7 @@ import { API, api } from "./workspace-types";
 import { AccountGate, CustomerPage, useCustomerAccount } from "./customer-page";
 import { AccountCards } from "./account-cards";
 import { NotificationSettings } from "./notification-settings";
+import { AccountGitHubAccess } from "./account-github-access";
 import {
   AccountClose,
   clearClosedAccountDrafts,
@@ -200,8 +201,10 @@ export function AccountSettings() {
                   </div>
                 </dl>
                 <p className="billing-small">
-                  Repository access is managed separately inside your projects.
+                  Choose which repositories to share when starting a project.
+                  Manage this browser’s connection below.
                 </p>
+                <AccountGitHubAccess key={account.id} accountId={account.id} onExpired={customer.fail} />
               </section>
               <AccountCards
                 key={account.id}

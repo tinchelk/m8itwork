@@ -401,6 +401,7 @@ export function RequestForm({
         }
       }}
     >
+      <fieldset className="portal-form-fields" disabled={busy}>
       <input type="hidden" name="id" />
       <label>
         What is this request about?
@@ -515,6 +516,7 @@ export function RequestForm({
           </button>
         </>
       )}
+      </fieldset>
     </form>
   );
 }

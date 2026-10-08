@@ -15,6 +15,7 @@ test("lands a new customer on the dashboard before explicitly starting a project
   await expect(page.getByLabel("GitHub repository", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "← Dashboard", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your apps. Their next chapter." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your apps. Their next chapter." })).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
@@ -79,12 +80,12 @@ test("keeps the operator's customer dashboard separate from the backoffice", asy
   await page.goto("/dashboard?view=team");
   await expect(page.getByRole("heading", { name: "Your apps. Their next chapter." })).toBeVisible();
   await expect(page.getByText("New team message", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Backoffice", exact: true })).toHaveAttribute("href", "http://127.0.0.1:3131/");
+  await expect(page.getByRole("link", { name: "Backoffice", exact: true })).toHaveCount(0);
   expect(state.operatorRequests).toBe(0);
   await page.getByRole("link", { name: /Proposal ready.*Bloom bookings.*Open project/ }).click();
   await expect(page.getByRole("link", { name: "Review proposal" })).toBeVisible();
   await expect(page.getByLabel("Review summary")).toHaveCount(0);
-  await page.getByRole("link", { name: "Backoffice", exact: true }).click();
+  await page.goto("http://127.0.0.1:3131/");
   await expect(page.getByRole("heading", { name: "Help the next app move forward." })).toBeVisible();
   expect(state.operatorRequests).toBeGreaterThan(0);
 });

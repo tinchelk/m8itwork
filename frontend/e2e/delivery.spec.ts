@@ -303,6 +303,15 @@ test("preserves loaded history after a new message and acknowledges only visible
   await expect(
     page.getByText("Review decision 002", { exact: true }),
   ).toHaveCount(1);
+  await expect(page.locator(".conversation-announcement")).toContainText("1 new team message received");
+  const history = page.getByRole("region", { name: "Project message history", exact: true });
+  await history.focus();
+  await history.press("End");
+  await expect.poll(() => history.evaluate(node => node.scrollTop)).toBeGreaterThan(0);
+  await history.press("Home");
+  await expect.poll(() => history.evaluate(node => node.scrollTop)).toBe(0);
+  await history.press("Tab");
+  await expect(page.getByLabel("Message to the team")).toBeFocused();
   expect(state.readMessageIds).not.toContain(state.messages.at(-1)!.id);
   await page.getByRole("button", { name: "Jump to latest message" }).click();
   await expect

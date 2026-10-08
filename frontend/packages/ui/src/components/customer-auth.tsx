@@ -114,16 +114,7 @@ export function CustomerAuthPanel({
       if (mode === "login") {
         await api("/v1/auth/login", { email, password });
         setPassword("");
-        const target = new URL(
-            requestedCustomerReturn() || "/dashboard",
-            window.location.origin,
-          ),
-          current = new URL(window.location.href);
-        for (const key of ["project", "payment"]) {
-          const value = current.searchParams.get(key);
-          if (value) target.searchParams.set(key, value);
-        }
-        window.location.assign(target.pathname + target.search + target.hash);
+        window.location.assign(requestedCustomerReturn() || "/dashboard");
       } else if (mode === "signup") {
         const result = await api<{ message: string }>("/v1/auth/register", {
           email,
@@ -181,10 +172,14 @@ export function CustomerAuthPanel({
   if (options?.account && !tokenMode)
     return (
       <section className="portal-card portal-signin">
-        <h1>You’re signed in.</h1>
+        {primaryHeading ? <h1>You’re signed in.</h1> : <h2>You’re signed in.</h2>}
         <p>Your projects and account are ready.</p>
         <a className="button" href={requestedCustomerReturn() || "/dashboard"}>
-          Open your dashboard ↗
+          {new URLSearchParams(query).get("return") === "account"
+            ? "Open your account"
+            : new URLSearchParams(query).get("return") === "billing"
+              ? "Open billing"
+              : "Open your dashboard"} <span aria-hidden="true">↗</span>
         </a>
       </section>
     );
@@ -236,6 +231,7 @@ export function CustomerAuthPanel({
       )}
       {!tokenMode && mode !== "forgot" && !(mode === "signup" && message) && (
         <>
+          <div className="auth-providers">
           {options?.googleEnabled && (
             <a
               className="button auth-social"
@@ -247,16 +243,17 @@ export function CustomerAuthPanel({
           )}
           {options?.connectEnabled && (
             <a
-              className="auth-github"
+              className="button auth-social"
               onClick={rememberCustomerReturn}
               href={`${API}/v1/github/connect?flow=login`}
             >
               Continue with GitHub <span aria-hidden="true">↗</span>
             </a>
           )}
-          <div className="auth-divider">
-            <span>or use email</span>
           </div>
+          {(options?.googleEnabled || options?.connectEnabled) && <div className="auth-divider">
+            <span>or use email</span>
+          </div>}
         </>
       )}
       {!verified && !(mode === "signup" && message) && (

@@ -35,7 +35,6 @@ import {
 } from "./workspace-drafts";
 import {
   API,
-  ADMIN_ORIGIN,
   CUSTOMER_ORIGIN,
   WorkspaceError,
   api,
@@ -49,6 +48,8 @@ import {
   type ProjectListItem,
 } from "./workspace-types";
 import { CustomerAuthPanel } from "./customer-auth";
+import { CustomerNavigation } from "./customer-navigation";
+import { NotificationSettings } from "./notification-settings";
 import {
   ProjectLifecycle,
   RepositoryRefresh,
@@ -130,6 +131,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
   const team = admin;
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [loadingProject, setLoadingProject] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedRequestId, setSavedRequestId] = useState<string | null>(null);
@@ -448,6 +450,19 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
     remember(null, true, true);
     requestAnimationFrame(() => contentTitle.current?.focus());
   }
+  async function disconnectGitHub() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api("/v1/github/disconnect", {});
+      setConnection(await api<Connection>("/v1/session"));
+      setNotice("GitHub access disconnected. Your saved project history is retained.");
+    } catch (reason) {
+      failure(reason);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function openOverview() {
     sequence.current++;
     setLoadingProject(false);
@@ -464,10 +479,12 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
       failure(reason);
     } finally {
       setBusy(false);
+      requestAnimationFrame(() => contentTitle.current?.focus());
     }
   }
   async function signOut() {
     setBusy(true);
+    setSigningOut(true);
     try {
       await api("/v1/auth/logout", {});
       if (auth?.account) clearAccountDrafts(auth.account.id);
@@ -487,6 +504,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
       failure(reason);
     } finally {
       setBusy(false);
+      setSigningOut(false);
     }
   }
 
@@ -507,9 +525,10 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
         <span className="portal-header-label">
           {admin ? "BACKOFFICE" : "CUSTOMER DASHBOARD"}
         </span>
-        <nav
-          aria-label={admin ? "Backoffice navigation" : "Dashboard navigation"}
-        >
+        {!admin ? (
+          <CustomerNavigation current="dashboard" account={auth?.account ?? null} busy={busy} signingOut={signingOut} logout={signOut} />
+        ) : (
+        <nav aria-label="Backoffice navigation">
           {auth?.account && (
             <>
               <span className="portal-user">
@@ -519,55 +538,13 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                     auth.account.email ||
                     "Your account"}
               </span>
-              {!admin && (
-                <>
-                  <a
-                    className="portal-account-link"
-                    href="/dashboard"
-                    aria-current="page"
-                  >
-                    Dashboard
-                  </a>
-                  <a className="portal-account-link" href="/billing">
-                    Billing
-                  </a>
-                  <a className="portal-account-link" href="/account">
-                    Account
-                  </a>
-                </>
-              )}
               {auth.account.isOperator && (
                 <a
                   className="portal-admin-link"
-                  href={
-                    admin ? `${CUSTOMER_ORIGIN}/dashboard` : `${ADMIN_ORIGIN}/`
-                  }
+                  href={`${CUSTOMER_ORIGIN}/dashboard`}
                 >
-                  {admin ? "Customer dashboard" : "Backoffice"}
+                  Customer dashboard
                 </a>
-              )}
-              {connection?.githubLogin && (
-                <button
-                  className="portal-plain"
-                  disabled={busy}
-                  onClick={async () => {
-                    setBusy(true);
-                    setError(null);
-                    try {
-                      await api("/v1/github/disconnect", {});
-                      setConnection(await api<Connection>("/v1/session"));
-                      setNotice(
-                        "GitHub access disconnected. Your saved project history is retained.",
-                      );
-                    } catch (reason) {
-                      failure(reason);
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  Disconnect GitHub
-                </button>
               )}
               <button
                 className="portal-plain"
@@ -579,6 +556,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
             </>
           )}
         </nav>
+        )}
       </header>
       <div className="portal-alerts">
         {error && (
@@ -840,7 +818,7 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
 
             {!listLoaded ? (
               <section className="portal-card">
-                <h1>Your projects couldn’t be loaded.</h1>
+                <h1 ref={contentTitle} tabIndex={-1}>Your projects couldn’t be loaded.</h1>
                 <p>
                   Try again to see your saved projects and their latest
                   progress.
@@ -1080,6 +1058,13 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                           busy={busy}
                           save={save}
                         />
+                      )}
+                      {!team && connection?.githubLogin && (
+                        <details className="repository-refresh">
+                          <summary>GitHub connection settings</summary>
+                          <p className="portal-muted">Disconnect GitHub repository access in this browser. Your sign-in and saved project history are retained. Other browser sessions keep their access. Reconnect GitHub before another repository inspection.</p>
+                          <button className="portal-plain" disabled={busy} onClick={disconnectGitHub}>Disconnect GitHub</button>
+                        </details>
                       )}
                       {project.stage !== "DRAFT" &&
                         !team &&
@@ -1425,9 +1410,14 @@ export function Workspace({ admin = false }: { admin?: boolean }) {
                   <summary>Service health & recovery</summary>
                   <OperationsPanel />
                 </details>
+                <details className="portal-card">
+                  <summary>Team email notifications</summary>
+                  <NotificationSettings audience="operator" account={auth.account} onExpired={failure} />
+                </details>
               </>
             ) : (
               <CustomerDashboard
+                headingRef={contentTitle}
                 projects={projects}
                 select={(id) => void selectProject(id, false)}
                 start={startProject}

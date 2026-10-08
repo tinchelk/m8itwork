@@ -32,6 +32,8 @@ export function ProjectConversation({
   const formRef = useRef<HTMLFormElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
   const reading = useRef<string | null>(null);
+  const receivedIds = useRef<Set<string> | null>(null);
+  const [incomingCount, setIncomingCount] = useState(0);
   const draft = useFormDraft(formRef, accountId, `conversation:${projectId}`);
   const prefix = `${team ? "/v1/operator/projects" : "/v1/projects"}/${projectId}/messages`;
   const error = useCallback((reason: unknown) => {
@@ -39,6 +41,11 @@ export function ProjectConversation({
     if (reason instanceof WorkspaceError && [401, 403].includes(reason.status)) onError(reason);
   }, [onError]);
   const receive = useCallback((result: Page) => {
+    if (receivedIds.current) {
+      const added = result.messages.filter((message) => !receivedIds.current!.has(message.id) && message.authorRole === (team ? "CUSTOMER" : "TEAM"));
+      if (added.length) setIncomingCount((count) => count + added.length);
+    }
+    receivedIds.current = new Set([...(receivedIds.current ?? []), ...result.messages.map((message) => message.id)]);
     setHistory((previous) => [
       ...new Map(
         [...previous, ...result.messages].map((message) => [
@@ -49,7 +56,7 @@ export function ProjectConversation({
     ]);
     setPage(result);
     setLoadError(null);
-  }, []);
+  }, [team]);
   useEffect(() => {
     let cancelled = false;
     let fetching = false;
@@ -175,15 +182,20 @@ export function ProjectConversation({
           {messages.length > 0 && (
             <button
               className="portal-plain"
-              onClick={() =>
+              onClick={() => {
+                setIncomingCount(0);
                 listRef.current?.lastElementChild?.scrollIntoView({
                   block: "nearest",
-                })
-              }
+                });
+              }}
             >
               Jump to latest message ↓
             </button>
           )}
+          <p className="conversation-announcement" aria-live="polite" aria-atomic="true">
+            {incomingCount > 0 ? `${incomingCount} new ${team ? "customer" : "team"} ${incomingCount === 1 ? "message" : "messages"} received. Jump to latest to read.` : ""}
+          </p>
+          <div className="conversation-history" role="region" aria-label="Project message history" tabIndex={0}>
           <ol
             ref={listRef}
             className="conversation-messages"
@@ -230,6 +242,7 @@ export function ProjectConversation({
               </li>
             )}
           </ol>
+          </div>
         </>
       )}
       {!readOnly && (
@@ -296,6 +309,7 @@ export function ProjectConversation({
               maxLength={5000}
               required
               placeholder="Share a question, update, or decision. Leave out passwords and secrets."
+              disabled={busy}
             />
           </label>
           {notice && (
@@ -311,7 +325,7 @@ export function ProjectConversation({
       )}
       <p className="portal-muted">
         Checks for new messages every 15 seconds while this page is open.
-        Project emails can be managed in Account settings.
+        {team ? "Team emails can be managed under Team email notifications in the backoffice." : "Project emails can be managed in Account settings."}
       </p>
     </section>
   );

@@ -1,5 +1,6 @@
 import { displayDate, stageLabels, type ProjectListItem } from "./workspace-types";
 import { isPaid, paymentNeedsReview } from "./project-payments";
+import type { Ref } from "react";
 
 const nextSteps: Record<string, string> = {
   DRAFT: "Share a demo or repository and tell us what you want next.",
@@ -20,18 +21,20 @@ export function CustomerDashboard({
   select,
   start,
   busy,
+  headingRef,
 }: {
   projects: ProjectListItem[];
   select: (id: string) => void;
   start: () => void;
   busy: boolean;
+  headingRef?: Ref<HTMLHeadingElement>;
 }) {
   return (
     <section className="customer-dashboard">
       <div className="dashboard-heading">
         <div>
           <p className="portal-kicker">YOUR DASHBOARD</p>
-          <h1>Your apps. Their next chapter.</h1>
+          <h1 ref={headingRef} tabIndex={-1}>Your apps. Their next chapter.</h1>
           <p className="portal-muted">
             Follow each project from your first request to a verified handover.
           </p>

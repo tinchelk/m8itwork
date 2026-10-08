@@ -141,6 +141,7 @@ export function ProjectDelivery({
                 }
               }}
             >
+              <fieldset className="portal-form-fields" disabled={busy}>
               <input type="hidden" name="id" />
               <label>
                 Delivery item title
@@ -159,6 +160,7 @@ export function ProjectDelivery({
               <button className="button" disabled={busy}>
                 Add delivery item
               </button>
+              </fieldset>
             </form>
           </details>
         )}
@@ -215,6 +217,7 @@ export function TeamNotes({
           }
         }}
       >
+        <fieldset className="portal-form-fields" disabled={busy}>
         <input type="hidden" name="id" />
         <label>
           Private note
@@ -223,6 +226,7 @@ export function TeamNotes({
         <button className="button" disabled={busy}>
           Save private note
         </button>
+        </fieldset>
       </form>
       <ol className="team-note-list">
         {project.notes?.map((note) => (

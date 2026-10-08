@@ -24,11 +24,6 @@
   line-height: 1.65;
   margin: 0;
 }
-.portal-header a[aria-current="page"] {
-  color: #96e6d9;
-  text-decoration: underline;
-  text-underline-offset: 9px;
-}
 .customer-settings-layout {
   display: grid;
   grid-template-columns: 210px minmax(0, 1fr);

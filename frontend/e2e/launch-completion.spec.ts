@@ -438,7 +438,15 @@ test("notification preferences explain unavailable delivery, verify separately a
       name: "Email me customer requests and operational alerts",
       exact: true,
     }),
-  ).toBeVisible();
+  ).toHaveCount(0);
+  await page.goto("http://127.0.0.1:3131/");
+  await page.getByText("Team email notifications", { exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Backoffice email notifications", exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Email me project updates", exact: true })).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "Email me customer requests and operational alerts", exact: true }).uncheck();
+  await expect(page.getByText("Backoffice emails paused.", { exact: false })).toBeVisible();
+  expect(prefs.operatorAlerts).toBe(false);
+  expect(prefs.projectUpdates).toBe(false);
 });
 
 test("a failed repository recheck removes the old candidate and operator forms follow refreshed delivery stage", async ({

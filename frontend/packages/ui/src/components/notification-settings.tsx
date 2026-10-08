@@ -20,9 +20,11 @@ interface Preferences {
 export function NotificationSettings({
   account,
   onExpired,
+  audience = "customer",
 }: {
   account: Account;
   onExpired: (reason: unknown) => void;
+  audience?: "customer" | "operator";
 }) {
   const [prefs, setPrefs] = useState<Preferences | null>(null),
     [error, setError] = useState<string | null>(null),
@@ -81,13 +83,13 @@ export function NotificationSettings({
   }
   const token = useSyncExternalStore(subscribe, readContact, () => "");
   return (
-    <section id="notifications" className="portal-card account-section">
-      <p className="portal-kicker">PROJECT UPDATES</p>
-      <h2>Email notifications</h2>
+    <section id={audience === "operator" ? "team-notifications" : "notifications"} className="portal-card account-section">
+      <p className="portal-kicker">{audience === "operator" ? "TEAM UPDATES" : "PROJECT UPDATES"}</p>
+      <h2>{audience === "operator" ? "Backoffice email notifications" : "Email notifications"}</h2>
       <p>
-        Receive request acknowledgments, team replies, proposals, payment
-        updates and handovers. Emails link to your dashboard; private project
-        details stay here.
+        {audience === "operator"
+          ? "Receive new customer requests and operational alerts. Emails link to the backoffice; private project details stay here."
+          : "Receive request acknowledgments, team replies, proposals, payment updates and handovers. Emails link to your dashboard; private project details stay here."}
       </p>
       {error && (
         <p className="portal-error" role="alert">
@@ -109,7 +111,7 @@ export function NotificationSettings({
           {notice}
         </p>
       )}
-      {token && (
+      {token && audience === "customer" && (
         <form
           className="portal-form"
           onSubmit={async (event) => {
@@ -140,14 +142,15 @@ export function NotificationSettings({
           {!prefs.enabled && (
             <p className="portal-notice">
               Email delivery is unavailable. Your preference is saved, but
-              updates stay in your dashboard until delivery resumes.
+              updates stay in {audience === "operator" ? "the backoffice" : "your dashboard"} until delivery resumes.
             </p>
           )}
           <p>
             {prefs.verified
               ? `Verified destination: ${prefs.email}`
-              : "Add a verified email to get project updates. You can continue using the dashboard without email."}
+              : `Add a verified email to get ${audience === "operator" ? "team alerts" : "project updates"}. You can continue using ${audience === "operator" ? "the backoffice" : "the dashboard"} without email.`}
           </p>
+          {audience === "customer" && (
           <label className="portal-check">
             <input
               type="checkbox"
@@ -165,7 +168,8 @@ export function NotificationSettings({
             />
             <span>Email me project updates</span>
           </label>
-          {prefs.operatorAlerts != null && (
+          )}
+          {audience === "operator" && prefs.operatorAlerts != null && (
             <label className="portal-check">
               <input
                 type="checkbox"
@@ -215,8 +219,7 @@ export function NotificationSettings({
           )}
           <p className="portal-muted">
             This address is separate from your sign-in identity. Signing out
-            does not stop project emails. Close the account or turn off updates
-            to stop them.
+            does not stop emails. Turn off the corresponding updates to stop them.
           </p>
         </>
       ) : (
