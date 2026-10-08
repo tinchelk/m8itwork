@@ -7,5 +7,5 @@
   "triggers": { "crons": ["* * * * *"] },
   "durable_objects": {"bindings": [{"name": "MONITOR", "class_name": "Monitor"}]},
   "migrations": [{"tag": "v1", "new_sqlite_classes": ["Monitor"]}],
-  "vars": {"ALERT_TO": "tin.che0301@gmail.com", "ALERT_FROM": "m8itwork <hello@m8itwork.com>", "ALERTS_ENABLED": "false"}
+  "vars": {"ALERT_FROM": "m8itwork <hello@m8itwork.com>", "ALERTS_ENABLED": "false"}
 }
