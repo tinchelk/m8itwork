@@ -10,7 +10,7 @@ Operators verify a notification destination in customer Account and enable **Ema
 
 The API processes payment inbox events and notifications every minute, without overlapping runs in one process. PostgreSQL fences and durable leases coordinate replicas. Cleanup runs hourly. Shutdown stops scheduling and awaits current maintenance. Financial events are saved before webhook acknowledgement; unknown or unreconciled related events hold work. Provider errors are stored as redacted codes.
 
-An in-process scheduler cannot alert while the API itself is down. Configure independent provider/uptime notifications to Tin for `https://api.m8itwork.com/health`, API deployment failures and database health before a paid pilot. This external alert destination/provider is an operating dependency; a dashboard or configured email key is not evidence that it is active. During an outage, stop customer collection and review workers, inspect Railway health/logs without exporting credentials, and use the recovery procedure below if database consistency is uncertain.
+An in-process scheduler cannot alert while the API itself is down. The independent Cloudflare watchdog now samples `https://api.m8itwork.com/health` every minute and monitors backup-host silence and snapshot age. Its live scheduler reports healthy; email alerts remain disabled pending authorized failure/recovery receipt testing. Read its authenticated status directly during an API outage; independent host incidents are not represented in the backoffice. It detects API/database unavailability, rather than subscribing to every Railway deployment event. See [OPERATING_ACCEPTANCE.md](OPERATING_ACCEPTANCE.md) for installation and incident actions. During an outage, stop customer collection and review workers, inspect Railway health/logs without exporting credentials, and use the recovery procedure below if database consistency is uncertain.
 
 ## Recovery actions
 
@@ -32,7 +32,7 @@ BACKUP_DATABASE_URL="$PRIVATE_SOURCE_URL" npm run backup -- backup /private/off-
 RECOVERY_DATABASE_URL="$ISOLATED_RESTORE_URL" npm run backup -- restore /private/off-provider/m8itwork-2026-10-07.enc
 ```
 
-Schedule and verify independent encrypted copies before accepting paid customers. Daily Railway volume backups currently retain six days; they remain useful but do not constitute an off-provider copy, tested restoration or point-in-time recovery. Document the chosen recovery-point objective, retained copies and latest successful drill. A lost or stale security-fence export is a blocker, never permission to reopen old accounts.
+The separate Docker agent now creates encrypted off-provider copies on the authorized Mac every 20 hours, retrying hourly after failures, with 14 successful-copy retention. Actual production snapshot restoration passed on October 7, 2026. A 24-hour recovery-point target requires an always-on host and separately recoverable keys; a sleeping Mac cannot execute backups. Daily Railway volume backups currently retain six days and remain supplemental; neither scheduled logical snapshots nor that retention establish point-in-time recovery. A lost or stale security-fence export is a blocker, never permission to reopen old accounts.
 
 ## Isolated restore and reconciliation
 
@@ -56,4 +56,12 @@ An actual PostgreSQL 17 logical dump from the dedicated synthetic test database 
 
 A real $1 **sandbox** Checkout session with app metadata was created after the snapshot, without entering a card or charging money. Provider discovery found its missing application mapping and produced a blocked reconciliation report (exit 2). Access did not reopen. The owned synthetic Checkout was expired; fixture accounts, isolated database and ephemeral archives/keys were removed. Production data was not replaced or modified.
 
-This closes the isolated restore/tooling drill. It does not establish a production backup schedule, off-provider storage retention/RPO, external uptime alert delivery, or permission to replace production data. Those operating configuration and paid-pilot gates remain explicit.
+This closes the isolated recovery/tooling drill, including closure and merchant-discovery behavior. It does not grant permission to replace production data or establish actual alert delivery.
+
+## Production snapshot restore — October 7, 2026
+
+Before migrations 015–020, the listed Railway backup `5f29286e-94a7-4616-8602-5c021a6cfc0e` and an AES-256-GCM authenticated logical snapshot were created. The actual PostgreSQL 18 snapshot restored into a new local PostgreSQL 18 container with no network or published ports; the restored database contained the 14 pre-rollout migrations. The dedicated read-only backup principal then created another encrypted production copy, which also restored successfully into a separate isolated database.
+
+The production principal has CONNECT, public-schema USAGE and SELECT, including defaults granted by migration owner `postgres`; it has no table writes, superuser, role/database creation, replication or RLS bypass. The agent validates the PostgreSQL certificate against the root CA retrieved through authenticated Railway SSH. A connection using an unrelated valid CA was rejected. The separate backup container reports `BACKUP_COMPLETED` and the external watchdog records its recent snapshot/heartbeat.
+
+This establishes actual off-provider snapshot creation and authenticated isolated restoration. These disposable restore targets were not connected to the app or reopened to customers. A future production recovery still requires current post-freeze closure fences, financial reconciliation, reviewed target approval and the procedure above. Alert receipt, an always-on host and independently recoverable key storage remain explicit dependencies.

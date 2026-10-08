@@ -160,10 +160,10 @@ The future features listed in the original audit remain demand-led: automated cu
 These are not satisfied by fixtures, configured keys, cached authentication or the local implementation:
 
 - Actual verification/reset email receipt and link completion using a separate controlled account. A request to send test emails to the owner's Gmail alias remains awaiting explicit approval; the owner's existing password/account is untouched.
-- Google branding/publication and a fresh human sign-in; a separate real customer with denial of an unshared private repository.
+- Google Audience is In production and a fresh Google sign-in passed for the owner's existing identity on deployed `fb84740`. Branding requires retry after Google's requested 24-hour wait following ownership verification; a separate real customer and unshared private repository denial remain open.
 - Completed sandbox saved-card add/remove, deposit and final payment with actual provider webhook reconciliation, delivery and handover. No live payment is authorized by passing this milestone.
 - Fresh human remote worker device login; Claude subscription acceptance remains deferred by user choice.
-- Independent encrypted backup scheduling, storage retention/recovery-point objective and an external outage alert destination/provider. The implemented in-process alerts cannot report an API outage while that API is stopped.
+- Independent backup/monitor implementation is deployed and its actual snapshot/isolated restore and scheduled health check pass. The Mac runs backups every 20 hours with 14 successful-copy retention; continuous availability requires an always-on host and separately recoverable key storage. Cloudflare monitors API/host/backup freshness independently, but alert delivery remains disabled pending approved receipt testing. See [OPERATING_ACCEPTANCE.md](OPERATING_ACCEPTANCE.md).
 - Merchant activation and dedicated live configuration before collecting customer money.
 
-The implementation milestone does not claim paid-pilot readiness or that these changes are already deployed. Current deployed revision and eventual rollout evidence belong in [DEPLOYMENT.md](DEPLOYMENT.md).
+The implementation milestone is deployed; it does not claim paid-pilot readiness. Exact revision, CI, deployment and runtime evidence are in [DEPLOYMENT.md](DEPLOYMENT.md). No production data was replaced and no payment was collected.

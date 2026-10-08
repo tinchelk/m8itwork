@@ -11,6 +11,8 @@ jobs:
       - run: docker compose -f compose.worker.yml config --quiet
       - run: docker compose -f compose.worker.yml build
       - run: node --test worker/tests/container.test.mjs
+      - run: docker build -f ops/Dockerfile -t m8itwork-operations:ci .
+      - run: OPS_TEST_IMAGE=m8itwork-operations:ci node --test ops/tests/*.test.mjs
   verify:
     runs-on: ubuntu-latest
     services:

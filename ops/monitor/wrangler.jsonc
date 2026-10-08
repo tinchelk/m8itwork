@@ -1,0 +1,11 @@
+{
+  "name": "m8itwork-operations-monitor",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-07",
+  "account_id": "0b8ad18e534f30cb089d6abbb0bdd8af",
+  "workers_dev": true,
+  "triggers": { "crons": ["* * * * *"] },
+  "durable_objects": {"bindings": [{"name": "MONITOR", "class_name": "Monitor"}]},
+  "migrations": [{"tag": "v1", "new_sqlite_classes": ["Monitor"]}],
+  "vars": {"ALERT_TO": "tin.che0301@gmail.com", "ALERT_FROM": "m8itwork <hello@m8itwork.com>", "ALERTS_ENABLED": "false"}
+}

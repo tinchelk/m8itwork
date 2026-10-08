@@ -1,0 +1,20 @@
+name: m8itwork-operations
+services:
+  backup:
+    build:
+      context: .
+      dockerfile: ops/Dockerfile
+    image: m8itwork-operations:local
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 11m
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m,mode=1777"]
+    volumes:
+      - ${M8_OPS_CONFIG:?Set private config path outside repo}:/run/secrets/ops.json:ro
+      - ${M8_BACKUP_DIRECTORY:?Set private off-provider archive directory}:/backups:rw

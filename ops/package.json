@@ -1,0 +1,8 @@
+{
+  "name": "m8itwork-operations",
+  "private": true,
+  "type": "module",
+  "scripts": {"test": "node --test tests/*.test.mjs", "monitor:deploy": "wrangler deploy --config monitor/wrangler.jsonc"},
+  "devDependencies": {"wrangler": "4.148.0"},
+  "overrides": {"sharp": "0.35.5"}
+}

@@ -11,3 +11,4 @@ backend/var/
 *.log
 *.tsbuildinfo
 .DS_Store
+.wrangler/

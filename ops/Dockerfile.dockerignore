@@ -1,0 +1,7 @@
+**
+!ops/
+!ops/Dockerfile
+!ops/agent.mjs
+!backend/
+!backend/scripts/
+!backend/scripts/backup.ts

@@ -238,3 +238,29 @@ Exact Git archives excluded ignored credentials/runtime files. The API was deplo
 Runtime: Account, Billing, Dashboard, Privacy, backoffice and API health return HTTPS 200. Anonymous closure returns 401, foreign-origin closure 403, invalid typed confirmation 400, and a read-only status probe for a nonexistent receipt returns `{closed:false}`. No synthetic account was created or closed in production. Real signed-in Chrome shows the secondary Close account action, correct account identity, retention explanations, safe Keep account focus and disabled submit until typed confirmation. Keep account dismisses the dialog and restores trigger focus; the real account remains signed in. The proof capture is only in ignored `backend/var/preview-account-close-production.png`. No authenticated closure, project, message, card or payment mutation was submitted for this runtime check. Retained closed-customer operator history is verified with database/browser fixtures rather than claimed as a production closure check.
 
 The migration-014 rollback constraint above takes precedence over earlier generic rollback instructions. After any closure exists, preserve closed-account auth/mutation fences or disable auth/customer writes before recovery; do not select a pre-closure API deployment while sign-in remains enabled.
+
+## Audited launch completion and independent operations — October 7, 2026
+
+Reviewed application milestone `fb847404b94732d712509c3d060fad684f538868` is committed, pushed and deployed. [Code CI 37722426064](https://github.com/tinchelk/m8itwork/actions/runs/37722426064) passed 183 backend tests, 226 desktop/mobile browser checks without retries, seven worker-container checks, lint, types and builds. Independent Staff Engineer, Senior Product Owner and Senior Product Designer gates pass; all valid implementation findings were addressed. See [LAUNCH_COMPLETION.md](LAUNCH_COMPLETION.md).
+
+| Resource | Verified release identifier |
+| --- | --- |
+| API deployment | `8180508b-95c5-4be3-baf9-d2dcd5eb584c` — SUCCESS |
+| Customer deployment | `daeb2f5e-7133-4613-b5b9-cc33f22b2cae` — SUCCESS |
+| Backoffice deployment | `ab323147-b786-4734-b4c2-b958006edc7b` — SUCCESS |
+| Listed backup before migrations 015–020 | `5f29286e-94a7-4616-8602-5c021a6cfc0e` — `before-launch-completion-fb84740-migrations015-020` |
+| Additive migrations | 015–020 applied; 20 finished migrations verified |
+| PostgreSQL proxy activation | `1b3c9128-1525-4775-92d0-f6c033eb506b` — SUCCESS, same PostgreSQL 18 image |
+| Independent Cloudflare monitor | `9674ee77-9ad1-4cad-b309-6008692ad3e2` — one-minute cron deployed |
+
+The API was uploaded from an exact Git archive excluding ignored credentials/runtime files, then migrations and health were verified before the two web apps. Customer and backoffice both use the `frontend` build context with their respective `APP` values. Railway service health checks are configured for API `/health` and web `/`, with 180-second startup timeout and bounded ON_FAILURE restart retries. Do not infer that an older deployment's metadata was retroactively changed by service configuration.
+
+Runtime checks: API `/health` returned `{status:"ok",recovery:false}` after a live database query. Both web apps returned HTTPS 200. Anonymous customer/project, operator/operations, Billing/card and notification routes returned 401; a foreign-origin project write returned 403 and an invalid Stripe signature returned 400. Fresh real Google sign-in for the owner's existing identity returned to the hydrated customer dashboard. The backoffice correctly denied that customer identity; this is not a claim of fresh authenticated operator acceptance. No customer project/message, card/payment or password mutation was submitted in these checks. The deployed dashboard proof is saved only in ignored `backend/var/preview-launch-dashboard-production.png`.
+
+Google's Audience is In production with basic sign-in scopes. Search Console shows the owner verified for `m8itwork.com`, property added October 7. Branding still requires retry after Google's requested 24-hour propagation; publication status alone does not establish branded OAuth approval.
+
+Before migration, an actual encrypted production snapshot restored into an isolated networkless PostgreSQL 18 container. A dedicated read-only production backup principal then produced another authenticated snapshot which also restored successfully. A separate Docker backup agent now runs on the authorized Mac with trusted-CA validation and no review-worker or payment credentials. The independent Cloudflare scheduler recorded a real healthy API check and recent backup heartbeat; anonymous status is denied. See [OPERATING_ACCEPTANCE.md](OPERATING_ACCEPTANCE.md) for the 14 passed operations checks, review gates, privacy boundary and operating actions.
+
+Owner/provider dependencies remain explicit: approved verification/reset and operating-test email receipt; Google branding retry; a second customer/unshared private-repository denial; completed sandbox card add/remove, staged payment/webhooks and handover; fresh human remote Codex login; always-on backup availability and separately recoverable keys; merchant activation and dedicated live configuration. Alerts remain disabled pending approved receipt testing. Claude subscription/login remains deferred by the user's choice. No money was charged and no production database was restored/replaced. The deployed implementation is not a paid-pilot sign-off.
+
+Keep migrations 014–020 and all closed-account/identity/financial fences in any recovery or compatible rollback. Prefer a forward fix; never reopen authentication with an old API that ignores those fences. Restore only with current post-freeze fences and merchant reconciliation as documented in [OPERATIONS_RECOVERY.md](OPERATIONS_RECOVERY.md).
