@@ -87,6 +87,9 @@
   margin: 8px 0 12px;
   letter-spacing: -0.7px;
 }
+.account-section > h2 {
+  overflow-wrap: anywhere;
+}
 .account-section > p:not(.portal-kicker),
 .billing-summary-note p {
   color: #bfd0d8;

@@ -42,7 +42,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.portal-shell .portal-header .customer-navigation > a,
+.portal-shell .portal-header nav > .portal-account-link,
 .portal-shell .portal-header > .customer-signout { min-height: 44px; display: inline-flex; align-items: center; }
 .auth-page { max-width: 580px; margin: 48px auto; }
 .customer-auth { min-width: 0; }
@@ -172,9 +172,6 @@
 }
 .portal-shell .portal-header nav > .portal-admin-link {
   display: inline;
-}
-.portal-shell .portal-header nav > .portal-account-link {
-  display: inline-block;
 }
 .portal-header nav {
   flex-wrap: wrap;

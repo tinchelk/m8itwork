@@ -23,6 +23,21 @@ test("gives Google and GitHub equal sign-in controls with sequential keyboard fo
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
+test("keeps the sign-in and signup dashboard link usable at narrow widths", async ({ page }, info) => {
+  await page.route("**/v1/auth/session", route => route.fulfill({ json: { account: null, googleEnabled: true, connectEnabled: true, emailEnabled: true } }));
+  for (const width of info.project.name === "mobile" ? [320, 390] : [768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const path of ["login", "signup"]) {
+      await page.goto(`/${path}`);
+      const link = page.getByRole("navigation", { name: "Account navigation", exact: true }).getByRole("link", { name: "Your dashboard", exact: true });
+      await expect(link).toBeVisible();
+      await expect(link).toHaveAttribute("href", "/dashboard");
+      expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+  }
+});
+
 for (const provider of ["Google", "GitHub", "email"] as const) {
   test(`retains the project and payment destination through ${provider} sign-in`, async ({ page }) => {
     const state = await mockWorkspace(page, { signedOut: true });
@@ -54,18 +69,69 @@ test("rejects a stored external sign-in destination and preserves a signed-in pr
 });
 
 test("keeps customer navigation consistent with an active page and a separate backoffice", async ({ page }, info) => {
+  test.setTimeout(60_000);
   await mockWorkspace(page, { operator: true });
-  for (const path of ["dashboard", "billing", "account"] as const) {
-    await page.goto(`/${path}`);
-    const navigation = page.getByRole("navigation", { name: "Customer navigation", exact: true });
-    const label = path[0].toUpperCase() + path.slice(1);
-    await expect(navigation.getByRole("link", { name: label, exact: true })).toHaveAttribute("aria-current", "page");
-    expect(await navigation.getByRole("link", { name: label, exact: true }).evaluate(node => getComputedStyle(node).color)).toBe("rgb(150, 230, 217)");
-    await expect(page.getByRole("link", { name: "Backoffice", exact: true })).toHaveCount(0);
-    await expect(page.locator(".portal-user")).toHaveText("Builder");
-    if (info.project.name === "mobile") {
-      expect(await navigation.evaluate(node => getComputedStyle(node).display)).toBe("grid");
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  let displayName = "Builder";
+  await page.route("**/v1/auth/session", route => route.fulfill({ json: { account: { id: "customer", githubLogin: "builder", displayName, isOperator: true }, googleEnabled: true, connectEnabled: true, emailEnabled: true } }));
+  const widths = info.project.name === "mobile" ? [320, 390] : [768, 1024, 1440];
+  for (const name of ["Builder", "AlexandraVeryLongCustomerName".repeat(5)]) {
+    displayName = name;
+    for (const width of widths) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const path of ["dashboard", "billing", "account"] as const) {
+        await page.goto(`/${path}`);
+        const navigation = page.getByRole("navigation", { name: "Customer navigation", exact: true });
+        const label = path[0].toUpperCase() + path.slice(1);
+        await expect(navigation.getByRole("link", { name: label, exact: true })).toHaveAttribute("aria-current", "page");
+        expect(await navigation.getByRole("link", { name: label, exact: true }).evaluate(node => getComputedStyle(node).color)).toBe("rgb(150, 230, 217)");
+        await expect(page.getByRole("link", { name: "Backoffice", exact: true })).toHaveCount(0);
+        await expect(page.locator(".portal-user")).toHaveText(name);
+        await page.evaluate(async () => { await document.fonts.ready; });
+        const header = page.locator(".portal-header");
+        const geometry = await header.evaluate(element => {
+          const headerBox = element.getBoundingClientRect();
+          const items = [...element.querySelectorAll<HTMLElement>(".wordmark,.customer-navigation > a,.portal-user,.customer-signout")]
+            .filter(node => node.getBoundingClientRect().height > 0)
+            .map(node => {
+              const box = node.getBoundingClientRect(), range = document.createRange();
+              range.selectNodeContents(node);
+              const text = range.getBoundingClientRect();
+              return { label: node.textContent, link: node.matches(".customer-navigation > a"), control: node.matches("a:not(.wordmark),button"), centered: !node.matches(".wordmark"), left: box.left, right: box.right, top: box.top, bottom: box.bottom, height: box.height, textCenter: text.top + text.height / 2, boxCenter: box.top + box.height / 2 };
+            });
+          return { left: headerBox.left, right: headerBox.right, items };
+        });
+        for (const item of geometry.items) {
+          if (item.centered) expect(Math.abs(item.textCenter - item.boxCenter), `${path} ${width}px ${item.label} text centering`).toBeLessThanOrEqual(1);
+          if (item.control) expect(item.height).toBeGreaterThanOrEqual(44);
+          expect(item.left).toBeGreaterThanOrEqual(geometry.left);
+          expect(item.right).toBeLessThanOrEqual(geometry.right);
+        }
+        const row = geometry.items.filter(item => width > 760 ? item.centered : item.link);
+        expect(Math.max(...row.map(item => item.textCenter)) - Math.min(...row.map(item => item.textCenter)), `${path} ${width}px row text alignment`).toBeLessThanOrEqual(1);
+        for (let first = 0; first < geometry.items.length; first++) {
+          for (let second = first + 1; second < geometry.items.length; second++) {
+            const a = geometry.items[first], b = geometry.items[second];
+            expect(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top, `${path} ${width}px header items must not collide`).toBe(true);
+          }
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        if (info.project.name === "mobile") {
+          expect(await navigation.evaluate(node => getComputedStyle(node).display)).toBe("grid");
+        }
+        if (width === widths.at(-1)) {
+          if (name === "Builder") {
+            await navigation.getByRole("link", { name: "Dashboard", exact: true }).focus();
+            for (const next of ["Billing", "Account"]) {
+              await page.keyboard.press("Tab");
+              await expect(navigation.getByRole("link", { name: next, exact: true })).toBeFocused();
+            }
+            await page.keyboard.press("Tab");
+            await expect(header.getByRole("button", { name: "Sign out", exact: true })).toBeFocused();
+            await page.locator("h1").first().click();
+          }
+          await header.screenshot({ path: info.outputPath(`header-${path}-${name === "Builder" ? "normal" : "long"}.png`) });
+        }
+      }
     }
   }
 });
