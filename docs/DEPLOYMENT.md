@@ -268,3 +268,19 @@ The correction is committed at `20ada9fa5064aca910449dfd8b336a9186a3c6d5`. [Fina
 Owner/provider dependencies remain explicit: approved verification/reset and operating-test email receipt; Google branding retry; a second customer/unshared private-repository denial; completed sandbox card add/remove, staged payment/webhooks and handover; fresh human remote Codex login; always-on backup availability and separately recoverable keys; merchant activation and dedicated live configuration. Alerts remain disabled pending approved receipt testing. Claude subscription/login remains deferred by the user's choice. No money was charged and no production database was restored/replaced. The deployed implementation is not a paid-pilot sign-off.
 
 Keep migrations 014–020 and all closed-account/identity/financial fences in any recovery or compatible rollback. Prefer a forward fix; never reopen authentication with an old API that ignores those fences. Restore only with current post-freeze fences and merchant reconciliation as documented in [OPERATIONS_RECOVERY.md](OPERATIONS_RECOVERY.md).
+
+## Customer navigation and UI/UX review — October 8, 2026
+
+Reviewed application milestone `dba9b6710cc303be59fbc5fdc4ab4410bfe04a74` separates customer navigation from backoffice, matches the two social sign-in buttons, separates notification audiences, preserves validated sign-in destinations, and improves focus, conversation accessibility, repository connection controls, and pending-save feedback. Independent Staff Engineer, Product Owner, and Designer gates pass for this cleanup. The deeper review and open design/recovery findings are in [UI_UX_REVIEW.md](UI_UX_REVIEW.md); this release does not claim paid-launch acceptance or completion of those broader findings.
+
+| Resource | Verified release identifier |
+| --- | --- |
+| Customer deployment | `b2485cc4-0dbf-40d7-8ad0-98644b633856` — SUCCESS |
+| Backoffice deployment | `245879ea-0573-4a6e-b1c0-f37eb5a9ea74` — SUCCESS |
+| Code CI | [37789152166](https://github.com/tinchelk/m8itwork/actions/runs/37789152166) — SUCCESS |
+
+Both web apps were uploaded from exact `frontend` Git archives with their existing respective `APP` configuration. API, schema, worker images, credentials, and provider configuration remain unchanged. CI passed 183 backend tests, 250 desktop/mobile browser checks without retries, seven worker-container and 14 operations checks, lint/types, and both production builds. Final local verification passed all 152 affected checks and then 24 focused checks after the last feedback correction, without retries.
+
+HTTPS Dashboard, sign-in, Account, Billing, and backoffice return 200 with certificate validation. An authenticated production browser confirms customer navigation without Backoffice on all three routes, the proper active-page indicators, customer-only Account preferences, Account repository settings before any project exists, and separate team notifications in backoffice. Production provider buttons have matching computed dimensions and styles. Routine GitHub sign-in with the existing grant returns to Billing when begun there. Desktop proof captures remain only in ignored `backend/var/ux-cleanup-{dashboard,sign-in,backoffice}-production.png`; mobile stateful evidence uses rendered synthetic journeys. No project, message, notification-preference, card, payment, repository-authorization, or account-closure mutation was submitted during rollout verification. Operating/provider acceptance dependencies and existing rollback fences remain in effect.
+
+Frontend rollback can select the preceding successful customer `daeb2f5e-7133-4613-b5b9-cc33f22b2cae` and backoffice `ab323147-b786-4734-b4c2-b958006edc7b` deployments while retaining the current API and all additive migrations. Do not infer permission to roll back authentication/financial fences.

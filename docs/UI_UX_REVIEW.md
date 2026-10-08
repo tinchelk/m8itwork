@@ -89,4 +89,14 @@ The design review also used the current [Web Interface Guidelines](https://raw.g
 
 Independent Staff Engineer, Product Owner, and Designer gates passed for this cleanup. Their review fixes are implemented: Account provides disconnect before the first project, disconnect wording reflects browser-session scope, the mobile navigation retains its semantic box, logout feedback tracks only logout, and repository warnings/notices clear when their state becomes obsolete. The last feedback change also passed all 24 focused desktop/mobile checks without retries. No scoped review findings are deferred. The larger findings above remain open and prevent claiming the corresponding journeys or the entire product are ready for paid launch.
 
-The source-only reviewers inspected the implementation and regression definitions; the Designer also inspected refreshed synthetic mobile captures. They did not independently run providers or production mutations. Production rollout verification follows the reviewed commit.
+The source-only reviewers inspected the implementation and regression definitions; the Designer also inspected refreshed synthetic mobile captures. They did not independently run providers or production mutations.
+
+## Production rollout
+
+Reviewed application commit `dba9b6710cc303be59fbc5fdc4ab4410bfe04a74` is pushed and deployed from exact `frontend` Git archives, excluding ignored credentials and runtime files. Railway customer deployment `b2485cc4-0dbf-40d7-8ad0-98644b633856` and backoffice deployment `245879ea-0573-4a6e-b1c0-f37eb5a9ea74` both report SUCCESS. API, schema, worker, and provider configuration are unchanged.
+
+[Code CI 37789152166](https://github.com/tinchelk/m8itwork/actions/runs/37789152166) passed 183 backend tests, all 250 desktop/mobile browser checks without retries, seven worker-container checks, 14 operations checks, lint, types, and both production builds.
+
+Dashboard, sign-in, Account, Billing, and backoffice return HTTPS 200 with certificate validation. In the authenticated production browser, all three customer pages show the shared navigation with the correct active page and no Backoffice link. Account exposes repository connection settings before any project exists and shows only customer email preferences. The separate authenticated backoffice shows its team notification panel. Production Google and GitHub buttons have matching computed dimensions, color, and radius. Routine GitHub sign-in using the existing grant successfully returns to Billing when started there; the browser was then returned to the customer dashboard and separate backoffice.
+
+Production captures are retained only in ignored `backend/var/ux-cleanup-{dashboard,sign-in,backoffice}-production.png`. The production browser remained at its normal desktop size; mobile evidence comes from the automated rendered journeys. No project, message, notification preference, card, payment, repository authorization, or account-closure mutation was submitted for rollout verification. Existing provider and operating acceptance dependencies remain open.
